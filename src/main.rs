@@ -1,17 +1,21 @@
 use tokio::net::TcpListener;
 use uuid::Uuid;
+use std::sync::{Arc, Mutex};
 
 mod routes;
 mod render;
+mod model;
+mod store;
 
 #[tokio::main]
 async fn main() {
 
     println!("Starting server...");
 
-    let app = routes::create_router();
+    let state = Arc::new(Mutex::new( store::PasteStore { pastes: Vec::new() } ));
 
-    // Vrací to Result, takže v produkčním kódu bys použil `match` nebo `?`
+    let app = routes::create_router(state);
+
     let listener = TcpListener::bind("127.0.0.1:3000")
         .await
         .unwrap();
@@ -22,9 +26,5 @@ async fn main() {
     axum::serve(listener, app)
         .await
         .unwrap();
-
-
-    let id = Uuid::new_v4();
-
 
 }
