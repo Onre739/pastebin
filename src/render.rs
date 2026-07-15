@@ -1,14 +1,32 @@
+use std::fmt::format;
+
 use axum::response::{Html, IntoResponse};
 use axum::extract::Path;
 
-pub async fn render_homepage() -> impl IntoResponse {
-    Html(r#"
+use crate::model;
+
+pub fn render_homepage(pastes: Vec<model::Paste>) -> impl IntoResponse {
     
+    let list_items = pastes.iter().map(|paste|{
+
+        let preview_content = String::from_utf8_lossy(&paste.content); 
+
+        if preview_content.chars().count() > 20 {
+            format!(r#"<li><a href="/paste/{}">{}...</a></li>"#, paste.id, &preview_content[..20])
+        }
+        else {
+            format!(r#"<li><a href="/paste/{}">{}</a></li>"#, paste.id, preview_content)
+        }
+
+    })
+    .collect::<Vec<String>>()
+    .join("\n");
+    
+    
+    let html_content = format!(r#"
     <div style="display:flex;align-items:center;justify-content:center;">
         <div>
-            <h1>
-                Pastebin by Onre
-            </h1>
+            <h1>Pastebin by Onre</h1>
 
             <div style="display:flex;justify-content:center; gap: 50px;">
                 <form id="paste-form">
@@ -20,72 +38,76 @@ pub async fn render_homepage() -> impl IntoResponse {
 
                     <label for="mimetype">MIME Type:</label>
                     <select id="mimetype">
-                        <option value="text/plain">Plain Text</option>
-                        <option value="text/html">HTML</option>
-                        <option value="text/markdown">Markdown</option>
-                        <option value="application/octet-stream">Octet Stream</option>
+                        <option value="PlainText">Plain Text</option>
+                        <option value="Html">HTML</option>
+                        <option value="Markdown">Markdown</option>
+                        <option value="OctetStream">Octet Stream</option>
                     </select>
 
                     <br><br>
 
                     <button id="submit">Submit</button>
-                
                 </form>
 
                 <div>
                     <h3>Paste Content</h3>
                     <ul id="paste-list">
-
-
+                        {list_items}
                     </ul>
                 </div>
             </div>
-            
         </div>
     </div>
 
     <script>
-        document.getElementById('submit').addEventListener('click', async (event) => {
+
+        let ul = document.getElementById('paste-list');
+        
+
+        document.getElementById('submit').addEventListener('click', async (event) => {{
             event.preventDefault();
-            const content = document.getElementById('content').value;
-            const mimetype = document.getElementById('mimetype').value;
+            const contentValue = document.getElementById('content').value;
+            const mimetypeValue = document.getElementById('mimetype').value;
 
-            const response = await fetch('/paste', {
+            const response = await fetch('/paste', {{
                 method: 'POST',
-                headers: {
+                headers: {{
                     'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ content, mimetype }),
-            });
+                }},
+                body: JSON.stringify({{ "content": contentValue, "mimetype": mimetypeValue }}),
+            }});
 
-            if (response.ok) {
-                const data = await response.json();
-                console.log('Paste submitted:', data);
-                const pasteList = document.getElementById('paste-list');
-                const listItem = document.createElement('li');
-                listItem.textContent = `Paste ID: ${data.id}, Content: ${data.content}, MIME Type: ${data.mimetype}`;
-                pasteList.appendChild(listItem);
-            } else {
+            if (response.redirected) {{
+                window.location.href = response.url;
+            }} else {{
                 console.error('Failed to submit paste');
-            }
-        });
+            }}
+        }});
     </script>
+    "#);
 
-    "#)
+    Html(html_content)
 }
 
 
-pub async fn get_paste_by_uuid(Path(uuid): Path<String>) -> impl IntoResponse {
+pub fn get_paste_by_uuid(paste: model::Paste) -> impl IntoResponse + use<> {
+    let id = paste.id;
+    let content = String::from_utf8_lossy(&paste.content);
+    
     
     let html_obsah = format!(r#"
         
             <div style="display:flex;align-items:center;justify-content:center;">
                 <div>
-                    <h1>
-                        Pastebin by Onre
-                    </h1>
+                    <div style="display:flex;align-items:center;justify-content:center; gap: 50px;">
+                        <h1>
+                            Pastebin by Onre
+                        </h1>
+                        <button onclick="window.location.href='/'">Back to Home</button>
+                    </div>
 
-                    <h3>Paste Content {uuid}</h3>
+                    <h3>Paste Content of {id}</h3>
+                    <p>{content}</p>
                     
                 </div>
             </div>

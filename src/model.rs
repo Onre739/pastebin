@@ -8,7 +8,7 @@ pub struct CreatePasteDto {
     pub mimetype: MimeKind,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug, Clone)]
 pub struct Paste {
     pub id: Uuid,
     pub content: Vec<u8>,          // binární i textový obsah
@@ -17,7 +17,7 @@ pub struct Paste {
     pub last_seen_tick: u64,       // "generace" naposledy zobrazeno, pro nalezení kandidáta k evikci
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum MimeKind {
     PlainText,
     Html,
