@@ -1,26 +1,42 @@
 use std::fmt::format;
-
 use axum::response::{Html, IntoResponse};
-use axum::extract::Path;
 
 use crate::model;
 
 pub fn render_homepage(pastes: Vec<model::Paste>) -> impl IntoResponse {
     
-    let list_items = pastes.iter().map(|paste|{
+    let mut list_items = Vec::new();
 
-        let preview_content = String::from_utf8_lossy(&paste.content); 
+    for paste in &pastes {
+        let preview_content = String::from_utf8_lossy(&paste.content);
 
-        if preview_content.chars().count() > 20 {
+        let list_item = if preview_content.chars().count() > 20 {
             format!(r#"<li><a href="/paste/{}">{}...</a></li>"#, paste.id, &preview_content[..20])
         }
         else {
             format!(r#"<li><a href="/paste/{}">{}</a></li>"#, paste.id, preview_content)
-        }
+        };
 
-    })
-    .collect::<Vec<String>>()
-    .join("\n");
+        list_items.push(list_item);
+    }
+
+    let list_items = list_items.join("\n");
+    
+    
+    // let list_items = pastes.iter().map(|paste|{
+
+    //     let preview_content = String::from_utf8_lossy(&paste.content); 
+
+    //     if preview_content.chars().count() > 20 {
+    //         format!(r#"<li><a href="/paste/{}">{}...</a></li>"#, paste.id, &preview_content[..20])
+    //     }
+    //     else {
+    //         format!(r#"<li><a href="/paste/{}">{}</a></li>"#, paste.id, preview_content)
+    //     }
+
+    // })
+    // .collect::<Vec<String>>()
+    // .join("\n");
     
     
     let html_content = format!(r#"
@@ -69,7 +85,7 @@ pub fn render_homepage(pastes: Vec<model::Paste>) -> impl IntoResponse {
             const contentValue = document.getElementById('content').value;
             const mimetypeValue = document.getElementById('mimetype').value;
 
-            const response = await fetch('/paste', {{
+            const response = await fetch('/paste/json', {{
                 method: 'POST',
                 headers: {{
                     'Content-Type': 'application/json',
