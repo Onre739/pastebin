@@ -48,7 +48,7 @@ pub fn render_homepage(pastes: Vec<model::Paste>) -> impl IntoResponse {
                 <form id="paste-form">
                     <h3>Submit a Paste</h3>
                     <label for="content">Content:</label>
-                    <input type="text" id="content" placeholder="Content"/>
+                    <textarea id="content" placeholder="Content"></textarea>
                     
                     <br><br>
 

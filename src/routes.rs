@@ -1,8 +1,9 @@
 use axum::{
     Json, Router, extract::{Path,State, Form}, http::{StatusCode, header}, response::{Html, IntoResponse, Redirect}, routing::{get, post},
 };
-use std::sync::{Arc, Mutex};
+use std::{option, sync::{Arc, Mutex}};
 use uuid::Uuid;
+use pulldown_cmark::{Parser, html, Options};
 use crate::model;
 use crate::render;
 use crate::store::PasteStore;
@@ -81,14 +82,45 @@ async fn get_paste(Path(uuid): Path<Uuid>, State(state): State<Arc<Mutex<PasteSt
                     paste.content.clone()
                     ).into_response()
                 }
+
                 model::MimeKind::Html => {
-                    render::get_paste_by_uuid(paste.clone()).into_response()
+                    ([(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+                        render::get_paste_by_uuid(paste.clone())
+                    ).into_response()
                 }
+
                 model::MimeKind::Markdown => {
-                    StatusCode::OK.into_response()
+                    let md_string = String::from_utf8(paste.content.clone());
+                    let mut html_output = String::new();
+
+                    let mut options = Options::empty();
+                    options.insert(Options::ENABLE_STRIKETHROUGH);
+                    options.insert(Options::ENABLE_SMART_PUNCTUATION);
+                    options.insert(Options::ENABLE_TABLES);
+                    options.insert(Options::ENABLE_TASKLISTS);
+
+                    match md_string {
+                        Ok(md_string_correct) => {
+                            let parser = Parser::new_ext(&md_string_correct, options);
+                            html::push_html(&mut html_output, parser);
+                        }
+                        Err(e) => {
+                            html_output = format!("<p>Error converting Markdown to HTML: {}</p>", e);
+                        }
+                    }
+
+                    ([(header::CONTENT_TYPE, "text/html; charset=utf-8")],    
+                        Html(html_output)
+                    ).into_response()
                 }
+
                 model::MimeKind::OctetStream => {
-                    StatusCode::OK.into_response()
+                    (
+                        [
+                            (header::CONTENT_TYPE, "application/octet-stream"),
+                            (header::CONTENT_DISPOSITION, &format!("attachment; filename=\"{}.bin\"", uuid))
+                        ], paste.content.clone()
+                    ).into_response()
                 }
             }
             
