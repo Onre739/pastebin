@@ -6,6 +6,7 @@ mod routes;
 mod render;
 mod model;
 mod store;
+mod repository;
 
 #[tokio::main]
 async fn main() {

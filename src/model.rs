@@ -1,6 +1,7 @@
 use uuid::Uuid;
 use serde::Serialize;
 use serde::Deserialize;
+use axum::response::{IntoResponse, Response};
 
 #[derive(Deserialize)]
 pub struct CreatePasteDto {
@@ -23,4 +24,30 @@ pub enum MimeKind {
     Html,
     Markdown,
     OctetStream,
+}
+
+pub enum AppError {
+    NotFound,
+    InvalidMimeType,
+    PayloadTooLarge,
+    LockPoisoned,
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        match self {
+            AppError::NotFound => {
+                (axum::http::StatusCode::NOT_FOUND, "Paste not found").into_response()
+            }
+            AppError::InvalidMimeType => {
+                (axum::http::StatusCode::BAD_REQUEST, "Invalid mimetype").into_response()
+            }
+            AppError::PayloadTooLarge => {
+                (axum::http::StatusCode::PAYLOAD_TOO_LARGE, "Payload too large").into_response()
+            }
+            AppError::LockPoisoned => {
+                (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+            }
+        }
+    }
 }

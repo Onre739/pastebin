@@ -3,7 +3,7 @@ use axum::response::{Html, IntoResponse};
 
 use crate::model;
 
-pub fn render_homepage(pastes: Vec<model::Paste>) -> impl IntoResponse {
+pub fn render_homepage(pastes: Vec<model::Paste>) -> String {
     
     let mut list_items = Vec::new();
 
@@ -102,11 +102,11 @@ pub fn render_homepage(pastes: Vec<model::Paste>) -> impl IntoResponse {
     </script>
     "#);
 
-    Html(html_content)
+    html_content
 }
 
 
-pub fn get_paste_by_uuid(paste: model::Paste) -> impl IntoResponse + use<> {
+pub fn get_paste_by_uuid(paste: model::Paste) -> String {
     let id = paste.id;
     let content = String::from_utf8_lossy(&paste.content);
     
@@ -130,5 +130,5 @@ pub fn get_paste_by_uuid(paste: model::Paste) -> impl IntoResponse + use<> {
 
         "#);
 
-    Html(html_obsah)
+    html_obsah
 }
