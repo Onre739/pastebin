@@ -1,0 +1,6 @@
+# Pastebin by Onre
+Classic pastebin app
+
+## Configuration
++ Config in .env
+- PORT, URL, MAX_PASTES

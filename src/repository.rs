@@ -4,11 +4,11 @@ use axum::{
 use uuid::Uuid;
 use std::{option, result, sync::{Arc, Mutex}};
 use pulldown_cmark::{Parser, html, Options};
+use syntect::{highlighting::ThemeSet, html::highlighted_html_for_string, parsing::SyntaxSet};
 
 use crate::render;
 use crate::store::PasteStore;
 use crate::model::{MimeKind, Paste, AppError};
-
 
 pub fn process_homepage (store: &PasteStore) -> Html<String> {   
     let html_content = render::render_homepage(store.pastes.clone());
@@ -57,7 +57,10 @@ pub fn process_paste (store: &mut PasteStore, id: Uuid) -> Result<Response, AppE
         }
 
         MimeKind::Markdown => {
-            let md_string = String::from_utf8(paste.content.clone());
+            // 1. Pulldown cmark
+            let md_string = String::from_utf8(paste.content.clone()).map_err(|e| AppError::BadRequest(e))?;
+            // map_err is needed for "?" operator, from_utf8 returns Result<String, FromUtf8Error> but ? needs AppError
+
             let mut html_output = String::new();
 
             let mut options = Options::empty();
@@ -66,15 +69,17 @@ pub fn process_paste (store: &mut PasteStore, id: Uuid) -> Result<Response, AppE
             options.insert(Options::ENABLE_TABLES);
             options.insert(Options::ENABLE_TASKLISTS);
 
-            match md_string {
-                Ok(md_string_correct) => {
-                    let parser = Parser::new_ext(&md_string_correct, options);
-                    html::push_html(&mut html_output, parser);
-                }
-                Err(e) => {
-                    html_output = format!("<p>Error converting Markdown to HTML: {}</p>", e);
-                }
-            }
+            let parser = Parser::new_ext(&md_string, options);
+            html::push_html(&mut html_output, parser);
+
+            // 2. Syntect
+            let syntax = store.syntax_set
+                .find_syntax_by_extension("rs")
+                .unwrap_or_else(|| store.syntax_set.find_syntax_plain_text());
+
+            let theme = &store.theme_set.themes["base16-ocean.dark"];
+
+
 
             ([(header::CONTENT_TYPE, "text/html; charset=utf-8")],    
                 Html(html_output)

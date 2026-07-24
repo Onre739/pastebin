@@ -1,8 +1,12 @@
+use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
+
 use crate::model::Paste;
 
 pub struct PasteStore {
     pub pastes: Vec<Paste>,
     pub max_pastes: usize,
+    pub syntax_set: SyntaxSet,
+    pub theme_set: ThemeSet,
 }
 
 impl PasteStore {

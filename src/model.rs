@@ -1,7 +1,7 @@
 use uuid::Uuid;
 use serde::{Serialize, Deserialize};
-use axum::response::{IntoResponse, Response};
-
+use axum::{response::{IntoResponse, Response}, http::StatusCode};
+use std::string::FromUtf8Error;
 #[derive(Deserialize)]
 pub struct CreatePasteDto {
     pub name: String,
@@ -32,22 +32,26 @@ pub enum AppError {
     InvalidMimeType,
     PayloadTooLarge,
     LockPoisoned,
+    BadRequest (FromUtf8Error),
 }
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         match self {
             AppError::NotFound => {
-                (axum::http::StatusCode::NOT_FOUND, "Paste not found").into_response()
+                (StatusCode::NOT_FOUND, "Paste not found").into_response()
             }
             AppError::InvalidMimeType => {
-                (axum::http::StatusCode::BAD_REQUEST, "Invalid mimetype").into_response()
+                (StatusCode::BAD_REQUEST, "Invalid mimetype").into_response()
             }
             AppError::PayloadTooLarge => {
-                (axum::http::StatusCode::PAYLOAD_TOO_LARGE, "Payload too large").into_response()
+                (StatusCode::PAYLOAD_TOO_LARGE, "Payload too large").into_response()
             }
             AppError::LockPoisoned => {
-                (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+            }
+            AppError::BadRequest(e) => {
+                (StatusCode::BAD_REQUEST, format!("{}", e)).into_response()
             }
         }
     }
