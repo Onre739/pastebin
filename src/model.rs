@@ -5,6 +5,7 @@ use axum::response::{IntoResponse, Response};
 
 #[derive(Deserialize)]
 pub struct CreatePasteDto {
+    pub name: String,
     pub content: String,
     pub mimetype: MimeKind,
 }
@@ -12,6 +13,7 @@ pub struct CreatePasteDto {
 #[derive(Serialize, Debug, Clone)]
 pub struct Paste {
     pub id: Uuid,
+    pub name: String,
     pub content: Vec<u8>,          // binární i textový obsah
     pub mimetype: MimeKind,        // enum: PlainText, Html, Markdown, OctetStream
     pub hits: u32,                 // počítadlo pro LRU

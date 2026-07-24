@@ -1,6 +1,6 @@
 use tokio::net::TcpListener;
 use uuid::Uuid;
-use std::sync::{Arc, Mutex};
+use std::{sync::{Arc, Mutex}, env};
 
 mod routes;
 mod render;
@@ -8,12 +8,14 @@ mod model;
 mod store;
 mod repository;
 
+const MAX_PASTES: usize = 5;
+
 #[tokio::main]
 async fn main() {
 
     println!("Starting server...");
 
-    let state = Arc::new(Mutex::new( store::PasteStore { pastes: Vec::new() } ));
+    let state = Arc::new(Mutex::new( store::PasteStore { pastes: Vec::new(), max_pastes: MAX_PASTES } ));
 
     let app = routes::create_router(state);
 

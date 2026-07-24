@@ -27,22 +27,24 @@ async fn get_home(State(state): State<Arc<Mutex<PasteStore>>>) -> impl IntoRespo
 async fn post_paste_json(State(state): State<Arc<Mutex<PasteStore>>>, Json(payload): Json<model::CreatePasteDto>) 
 -> impl IntoResponse {
     let mut store = state.lock().unwrap();
-    let id = repository::process_post(&mut store, payload.content, payload.mimetype);
-
-    Redirect::to(&format!("/paste/{}", id))
+    let id = repository::process_post(&mut store, payload.name, payload.content, payload.mimetype);
+    
+    Json(id)
+    //Redirect::to(&format!("/paste/{}", id))
 }
 
 async fn post_paste_form(State(state): State<Arc<Mutex<PasteStore>>>, Form(form): Form<model::CreatePasteDto>) 
 -> impl IntoResponse {
     let mut store = state.lock().unwrap();
-    let id = repository::process_post(&mut store, form.content, form.mimetype);
+    let id = repository::process_post(&mut store, form.name, form.content, form.mimetype);
 
-    Redirect::to(&format!("/paste/{}", id))    
+    Json(id)
+    //Redirect::to(&format!("/paste/{}", id))    
 }
 
 async fn get_paste(Path(uuid): Path<Uuid>, State(state): State<Arc<Mutex<PasteStore>>>) -> impl IntoResponse {
     println!("Looking for paste with UUID: {}", uuid);
 
-    let store = state.lock().unwrap();
-    repository::process_paste(&store, uuid)
+    let mut store = state.lock().unwrap();
+    repository::process_paste(&mut store, uuid)
 }

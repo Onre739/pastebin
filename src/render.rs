@@ -11,10 +11,12 @@ pub fn render_homepage(pastes: Vec<model::Paste>) -> String {
         let preview_content = String::from_utf8_lossy(&paste.content);
 
         let list_item = if preview_content.chars().count() > 20 {
-            format!(r#"<li><a href="/paste/{}">{}...</a></li>"#, paste.id, &preview_content[..20])
+            //format!(r#"<li><a href="/paste/{}">{}...</a></li>"#, paste.id, &preview_content[..20])
+            format!(r#"<li><a href="/paste/{}">{} - {}</a></li>"#, paste.id, paste.name, paste.hits)
         }
         else {
-            format!(r#"<li><a href="/paste/{}">{}</a></li>"#, paste.id, preview_content)
+            //format!(r#"<li><a href="/paste/{}">{}</a></li>"#, paste.id, preview_content)
+            format!(r#"<li><a href="/paste/{}">{} - {}</a></li>"#, paste.id, paste.name, paste.hits)        
         };
 
         list_items.push(list_item);
@@ -47,6 +49,12 @@ pub fn render_homepage(pastes: Vec<model::Paste>) -> String {
             <div style="display:flex;justify-content:center; gap: 50px;">
                 <form id="paste-form">
                     <h3>Submit a Paste</h3>
+
+                    <label for="name">Name:</label>
+                    <input type="text" id="name">
+
+                    <br><br>
+
                     <label for="content">Content:</label>
                     <textarea id="content" placeholder="Content"></textarea>
                     
@@ -82,6 +90,7 @@ pub fn render_homepage(pastes: Vec<model::Paste>) -> String {
 
         document.getElementById('submit').addEventListener('click', async (event) => {{
             event.preventDefault();
+            const nameValue = document.getElementById('name').value;
             const contentValue = document.getElementById('content').value;
             const mimetypeValue = document.getElementById('mimetype').value;
 
@@ -90,11 +99,12 @@ pub fn render_homepage(pastes: Vec<model::Paste>) -> String {
                 headers: {{
                     'Content-Type': 'application/json',
                 }},
-                body: JSON.stringify({{ "content": contentValue, "mimetype": mimetypeValue }}),
+                body: JSON.stringify({{ "name": nameValue, "content": contentValue, "mimetype": mimetypeValue }}),
             }});
-
-            if (response.redirected) {{
-                window.location.href = response.url;
+            
+            if (response.ok) {{
+                const id = await response.json();
+                window.location.href = '/paste/' + id;
             }} else {{
                 console.error('Failed to submit paste');
             }}
@@ -108,6 +118,7 @@ pub fn render_homepage(pastes: Vec<model::Paste>) -> String {
 
 pub fn get_paste_by_uuid(paste: model::Paste) -> String {
     let id = paste.id;
+    let name = paste.name;
     let content = String::from_utf8_lossy(&paste.content);
     
     
@@ -122,7 +133,7 @@ pub fn get_paste_by_uuid(paste: model::Paste) -> String {
                         <button onclick="window.location.href='/'">Back to Home</button>
                     </div>
 
-                    <h3>Paste Content of {id}</h3>
+                    <h3>Paste Content of {name} {id}</h3>
                     <p>{content}</p>
                     
                 </div>
