@@ -1,6 +1,5 @@
 use uuid::Uuid;
-use serde::Serialize;
-use serde::Deserialize;
+use serde::{Serialize, Deserialize};
 use axum::response::{IntoResponse, Response};
 
 #[derive(Deserialize)]

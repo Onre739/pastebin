@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Pastebin by Onre</title>
+    <style>
+        :root {
+            --bg: #0f1115;
+            --panel: #171a21;
+            --border: #2a2e38;
+            --text: #e4e6eb;
+            --muted: #8a8f98;
+            --accent: #5b8cff;
+            --accent-hover: #7ba1ff;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+            display: flex;
+            justify-content: center;
+            padding: 40px 20px;
+        }
+
+        .page {
+            width: 100%;
+            max-width: 900px;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 1.8rem;
+            margin-bottom: 32px;
+        }
+
+        .layout {
+            display: flex;
+            gap: 24px;
+            flex-wrap: wrap;
+            align-items: flex-start;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px;
+            flex: 1 1 320px;
+        }
+
+        .panel h3 {
+            margin-top: 0;
+            font-size: 1.05rem;
+            color: var(--muted);
+            font-weight: 600;
+        }
+
+        label {
+            display: block;
+            font-size: 0.85rem;
+            color: var(--muted);
+            margin: 14px 0 6px;
+        }
+
+        input[type="text"], textarea, select {
+            width: 100%;
+            background: var(--bg);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px 10px;
+            font-family: inherit;
+            font-size: 0.95rem;
+        }
+
+        textarea {
+            min-height: 140px;
+            resize: vertical;
+            font-family: "Consolas", monospace;
+        }
+
+        button {
+            margin-top: 18px;
+            width: 100%;
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 10px;
+            font-size: 0.95rem;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: var(--accent-hover);
+        }
+
+        ul#paste-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 360px;
+            overflow-y: auto;
+        }
+
+        .paste-item a {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            text-decoration: none;
+            color: var(--text);
+        }
+
+        .paste-item a:hover {
+            border-color: var(--accent);
+        }
+
+        .paste-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .paste-hits {
+            color: var(--muted);
+            font-size: 0.85rem;
+            flex-shrink: 0;
+        }
+
+        .paste-empty {
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <h1>Pastebin</h1>
+
+        <div class="layout">
+            <div class="panel">
+                <h3>Submit a Paste</h3>
+                <form id="paste-form">
+                    <label for="name">Name</label>
+                    <input type="text" id="name">
+
+                    <label for="content">Content</label>
+                    <textarea id="content" placeholder="Content"></textarea>
+
+                    <label for="mimetype">MIME Type</label>
+                    <select id="mimetype">
+                        <option value="PlainText">Plain Text</option>
+                        <option value="Html">HTML</option>
+                        <option value="Markdown">Markdown</option>
+                        <option value="OctetStream">Octet Stream</option>
+                    </select>
+
+                    <button id="submit">Submit</button>
+                </form>
+            </div>
+
+            <div class="panel">
+                <h3>Pastes</h3>
+                <ul id="paste-list">
+                    {{PASTE_LIST}}
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('submit').addEventListener('click', async (event) => {
+            event.preventDefault();
+            const nameValue = document.getElementById('name').value;
+            const contentValue = document.getElementById('content').value;
+            const mimetypeValue = document.getElementById('mimetype').value;
+
+            const response = await fetch('/paste/json', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ "name": nameValue, "content": contentValue, "mimetype": mimetypeValue }),
+            });
+
+            if (response.ok) {
+                const id = await response.json();
+                window.location.href = '/paste/' + id;
+            } else {
+                console.error('Failed to submit paste');
+            }
+        });
+    </script>
+</body>
+</html>

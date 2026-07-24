@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{NAME}} - Pastebin</title>
+    <style>
+        :root {
+            --bg: #0f1115;
+            --panel: #171a21;
+            --border: #2a2e38;
+            --text: #e4e6eb;
+            --muted: #8a8f98;
+            --accent: #5b8cff;
+            --accent-hover: #7ba1ff;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+            display: flex;
+            justify-content: center;
+            padding: 40px 20px;
+        }
+
+        .page {
+            width: 100%;
+            max-width: 900px;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+        }
+
+        .topbar h1 {
+            font-size: 1.6rem;
+            margin: 0;
+        }
+
+        .back-link {
+            color: var(--text);
+            text-decoration: none;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px 14px;
+            font-size: 0.9rem;
+        }
+
+        .back-link:hover {
+            border-color: var(--accent);
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px;
+        }
+
+        .panel h3 {
+            margin-top: 0;
+            font-size: 1.2rem;
+        }
+
+        .meta {
+            color: var(--muted);
+            font-size: 0.85rem;
+            margin-top: -8px;
+        }
+
+        .content {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 16px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-family: "Consolas", monospace;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="topbar">
+            <h1>Pastebin</h1>
+            <a class="back-link" href="/">Back to Home</a>
+        </div>
+
+        <div class="panel">
+            <h3>{{NAME}}</h3>
+            <p class="meta">ID: {{ID}}</p>
+            <pre class="content">{{CONTENT}}</pre>
+        </div>
+    </div>
+</body>
+</html>
