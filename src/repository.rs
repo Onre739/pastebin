@@ -3,7 +3,7 @@ use axum::{
 };
 use uuid::Uuid;
 use std::{option, result, sync::{Arc, Mutex}};
-use pulldown_cmark::{Parser, html, Options};
+use pulldown_cmark::{Event, Tag, TagEnd, CodeBlockKind, Parser, html, Options};
 use syntect::{highlighting::ThemeSet, html::highlighted_html_for_string, parsing::SyntaxSet};
 
 use crate::render;
@@ -37,9 +37,11 @@ pub fn process_paste (store: &mut PasteStore, id: Uuid) -> Result<Response, AppE
     // 1. Find idex
     let index = store.pastes.iter().position(|p| p.id == id).ok_or(AppError::NotFound)?;
     
-    // 2. Get paste
-    let paste = &mut store.pastes[index];
-    paste.hits += 1;
+    // 2. Increment hits
+    store.pastes[index].hits += 1;
+
+    // 3. Get paste
+    let paste = &store.pastes[index];
     
     let response = match paste.mimetype {
         MimeKind::PlainText => {
@@ -57,29 +59,8 @@ pub fn process_paste (store: &mut PasteStore, id: Uuid) -> Result<Response, AppE
         }
 
         MimeKind::Markdown => {
-            // 1. Pulldown cmark
-            let md_string = String::from_utf8(paste.content.clone()).map_err(|e| AppError::BadRequest(e))?;
-            // map_err is needed for "?" operator, from_utf8 returns Result<String, FromUtf8Error> but ? needs AppError
 
-            let mut html_output = String::new();
-
-            let mut options = Options::empty();
-            options.insert(Options::ENABLE_STRIKETHROUGH);
-            options.insert(Options::ENABLE_SMART_PUNCTUATION);
-            options.insert(Options::ENABLE_TABLES);
-            options.insert(Options::ENABLE_TASKLISTS);
-
-            let parser = Parser::new_ext(&md_string, options);
-            html::push_html(&mut html_output, parser);
-
-            // 2. Syntect
-            let syntax = store.syntax_set
-                .find_syntax_by_extension("rs")
-                .unwrap_or_else(|| store.syntax_set.find_syntax_plain_text());
-
-            let theme = &store.theme_set.themes["base16-ocean.dark"];
-
-
+            let html_output = transform_md(&paste, &store)?;
 
             ([(header::CONTENT_TYPE, "text/html; charset=utf-8")],    
                 Html(html_output)
@@ -107,4 +88,64 @@ pub fn process_paste (store: &mut PasteStore, id: Uuid) -> Result<Response, AppE
     }
 
     Ok(response)        
+}
+
+fn transform_md (paste: &Paste, store: &PasteStore) -> Result<String, AppError> {
+    
+    // 1. Pulldown cmark
+    let md_string = String::from_utf8(paste.content.clone()).map_err(|e| AppError::BadRequest(e))?;
+    // map_err is needed for "?" operator, from_utf8 returns Result<String, FromUtf8Error> but ? needs AppError
+
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    options.insert(Options::ENABLE_SMART_PUNCTUATION);
+    options.insert(Options::ENABLE_TABLES);
+    options.insert(Options::ENABLE_TASKLISTS);
+
+    let theme = &store.theme_set.themes["Solarized (light)"];
+
+    // 2. Parser
+    let parser = Parser::new_ext(&md_string, options);
+    let mut new_events = Vec::new();
+
+    let mut in_code_block = false;
+    let mut current_lang = String::new();
+    let mut code_buffer = String::new();
+
+    for event in parser {
+        match event {
+            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(lang))) => {
+                in_code_block = true;
+                current_lang = lang.to_string();
+                code_buffer.clear();
+            }
+
+            Event::Text(t) if in_code_block => {
+                code_buffer.push_str(&t);
+            }
+
+            Event::End(TagEnd::CodeBlock) => {
+                in_code_block = false;
+            
+                let syntax = store.syntax_set.find_syntax_by_token(&current_lang)
+                .unwrap_or_else(|| store.syntax_set.find_syntax_plain_text());
+
+                let highlighted_html = highlighted_html_for_string(&code_buffer, &store.syntax_set, syntax, theme).map_err(|e| AppError::MarkdownParserFailed)?;
+
+                new_events.push(Event::Html(highlighted_html.into()));
+            }
+
+            other => {
+                if !in_code_block {
+                    new_events.push(other);
+                }
+            }
+        }
+    }
+
+
+    let mut html_output = String::new();
+    html::push_html(&mut html_output, new_events.into_iter());
+
+    Ok(html_output)
 }

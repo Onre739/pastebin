@@ -33,6 +33,7 @@ pub enum AppError {
     PayloadTooLarge,
     LockPoisoned,
     BadRequest (FromUtf8Error),
+    MarkdownParserFailed,
 }
 
 impl IntoResponse for AppError {
@@ -52,6 +53,9 @@ impl IntoResponse for AppError {
             }
             AppError::BadRequest(e) => {
                 (StatusCode::BAD_REQUEST, format!("{}", e)).into_response()
+            }
+            AppError::MarkdownParserFailed => {
+                (StatusCode::BAD_REQUEST, "Markdown parser failed").into_response()
             }
         }
     }
