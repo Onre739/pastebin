@@ -21,14 +21,14 @@ async fn get_home(State(state): State<Arc<Mutex<PasteStore>>>)
 -> Result<impl IntoResponse, AppError> {
     let store = state.lock().unwrap();
      
-    let html = repository::process_homepage(&store);
+    let html = repository::process_homepage(&store)?;
     Ok(html)
 }
 
 async fn post_paste_json(State(state): State<Arc<Mutex<PasteStore>>>, Json(payload): Json<model::CreatePasteDto>) 
 -> Result<impl IntoResponse, AppError> {
     let mut store = state.lock().unwrap();
-    let id = repository::process_post(&mut store, payload.name, payload.content, payload.mimetype);
+    let id = repository::process_post(&mut store, payload.name, payload.content, payload.mimetype)?;
     
     Ok(Json(id))
 }
@@ -36,7 +36,7 @@ async fn post_paste_json(State(state): State<Arc<Mutex<PasteStore>>>, Json(paylo
 async fn post_paste_form(State(state): State<Arc<Mutex<PasteStore>>>, Form(form): Form<model::CreatePasteDto>) 
 -> Result <impl IntoResponse, AppError> {
     let mut store = state.lock().unwrap();
-    let id = repository::process_post(&mut store, form.name, form.content, form.mimetype);
+    let id = repository::process_post(&mut store, form.name, form.content, form.mimetype)?;
 
     Ok(Json(id))
 }

@@ -5,17 +5,18 @@ use uuid::Uuid;
 use std::{option, result, sync::{Arc, Mutex}};
 use pulldown_cmark::{Event, Tag, TagEnd, CodeBlockKind, Parser, html, Options};
 use syntect::{highlighting::ThemeSet, html::highlighted_html_for_string, parsing::SyntaxSet};
+use mermaid_svg::render;
 
 use crate::render;
 use crate::store::PasteStore;
 use crate::model::{MimeKind, Paste, AppError};
 
-pub fn process_homepage (store: &PasteStore) -> Html<String> {   
+pub fn process_homepage (store: &PasteStore) -> Result<Html<String>, AppError> {   
     let html_content = render::render_homepage(store.pastes.clone());
-    Html(html_content)
+    Ok(Html(html_content))
 }
 
-pub fn process_post (store: &mut PasteStore, name: String, content: String, mimetype: MimeKind) -> Uuid {
+pub fn process_post (store: &mut PasteStore, name: String, content: String, mimetype: MimeKind) -> Result<Uuid, AppError> {
     let id = Uuid::new_v4();
     let paste = Paste {
         id,
@@ -29,7 +30,7 @@ pub fn process_post (store: &mut PasteStore, name: String, content: String, mime
     println!("Paste: {:#?}", paste);
     
     store.pastes.push(paste);
-    id
+    Ok(id)
 }
 
 pub fn process_paste (store: &mut PasteStore, id: Uuid) -> Result<Response, AppError>{
@@ -109,30 +110,45 @@ fn transform_md (paste: &Paste, store: &PasteStore) -> Result<String, AppError> 
     let mut new_events = Vec::new();
 
     let mut in_code_block = false;
+    let mut in_mermaid = false;
     let mut current_lang = String::new();
     let mut code_buffer = String::new();
 
     for event in parser {
         match event {
-            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(lang))) => {
-                in_code_block = true;
-                current_lang = lang.to_string();
-                code_buffer.clear();
+            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(lang))) => {  // ```lang
+                if lang.as_ref() == "mermaid" {
+                    in_mermaid = true;
+                    code_buffer.clear();
+                }
+                else {
+                    in_code_block = true;
+                    current_lang = lang.to_string();
+                    code_buffer.clear();
+                }
             }
 
-            Event::Text(t) if in_code_block => {
+            Event::Text(t) if in_code_block || in_mermaid => {
                 code_buffer.push_str(&t);
             }
 
             Event::End(TagEnd::CodeBlock) => {
-                in_code_block = false;
-            
-                let syntax = store.syntax_set.find_syntax_by_token(&current_lang)
-                .unwrap_or_else(|| store.syntax_set.find_syntax_plain_text());
-
-                let highlighted_html = highlighted_html_for_string(&code_buffer, &store.syntax_set, syntax, theme).map_err(|e| AppError::MarkdownParserFailed)?;
-
-                new_events.push(Event::Html(highlighted_html.into()));
+                if in_mermaid {
+                    in_mermaid = false;
+                    
+                    let html_content = render(&code_buffer).map_err(|e| AppError::MermaidRenderError(e))?;
+                    new_events.push(Event::Html(html_content.into()));
+                }
+                else if in_code_block {
+                    in_code_block = false;
+                    
+                    let syntax = store.syntax_set.find_syntax_by_token(&current_lang)
+                    .unwrap_or_else(|| store.syntax_set.find_syntax_plain_text());
+    
+                    let highlighted_html = highlighted_html_for_string(&code_buffer, &store.syntax_set, syntax, theme).map_err(|_| AppError::MarkdownParserFailed)?;
+    
+                    new_events.push(Event::Html(highlighted_html.into()));
+                }            
             }
 
             other => {

@@ -1,3 +1,4 @@
+use mermaid_svg::RenderError;
 use uuid::Uuid;
 use serde::{Serialize, Deserialize};
 use axum::{response::{IntoResponse, Response}, http::StatusCode};
@@ -34,6 +35,7 @@ pub enum AppError {
     LockPoisoned,
     BadRequest (FromUtf8Error),
     MarkdownParserFailed,
+    MermaidRenderError(RenderError),
 }
 
 impl IntoResponse for AppError {
@@ -56,6 +58,9 @@ impl IntoResponse for AppError {
             }
             AppError::MarkdownParserFailed => {
                 (StatusCode::BAD_REQUEST, "Markdown parser failed").into_response()
+            }
+            AppError::MermaidRenderError(e) => {
+                (StatusCode::BAD_REQUEST, format!("Mermaid render failed: {}", e)).into_response()
             }
         }
     }

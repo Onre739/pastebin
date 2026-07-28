@@ -44,3 +44,15 @@ impl PasteStore {
 
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn idk(){
+        
+    }
+
+}
+
+
