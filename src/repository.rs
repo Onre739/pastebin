@@ -7,7 +7,7 @@ use pulldown_cmark::{Event, Tag, TagEnd, CodeBlockKind, Parser, html, Options};
 use syntect::{highlighting::ThemeSet, html::highlighted_html_for_string, parsing::SyntaxSet};
 use mermaid_svg::render;
 
-use crate::render;
+use crate::{render, store::StyleStore};
 use crate::store::PasteStore;
 use crate::model::{MimeKind, Paste, AppError};
 
@@ -33,7 +33,7 @@ pub fn process_post (store: &mut PasteStore, name: String, content: String, mime
     Ok(id)
 }
 
-pub fn process_paste (store: &mut PasteStore, id: Uuid) -> Result<Response, AppError>{
+pub fn process_paste (store: &mut PasteStore, style_store: &StyleStore, id: Uuid) -> Result<Response, AppError>{
     
     // 1. Find idex
     let index = store.pastes.iter().position(|p| p.id == id).ok_or(AppError::NotFound)?;
@@ -61,7 +61,7 @@ pub fn process_paste (store: &mut PasteStore, id: Uuid) -> Result<Response, AppE
 
         MimeKind::Markdown => {
 
-            let html_output = transform_md(&paste, &store)?;
+            let html_output = transform_md(&paste, &style_store)?;
 
             ([(header::CONTENT_TYPE, "text/html; charset=utf-8")],    
                 Html(html_output)
@@ -91,7 +91,7 @@ pub fn process_paste (store: &mut PasteStore, id: Uuid) -> Result<Response, AppE
     Ok(response)        
 }
 
-fn transform_md (paste: &Paste, store: &PasteStore) -> Result<String, AppError> {
+fn transform_md (paste: &Paste, style_store: &StyleStore) -> Result<String, AppError> {
     
     // 1. Pulldown cmark
     let md_string = String::from_utf8(paste.content.clone()).map_err(|e| AppError::BadRequest(e))?;
@@ -103,7 +103,7 @@ fn transform_md (paste: &Paste, store: &PasteStore) -> Result<String, AppError> 
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_TASKLISTS);
 
-    let theme = &store.theme_set.themes["Solarized (light)"];
+    let theme = &style_store.theme_set.themes["Solarized (light)"];
 
     // 2. Parser
     let parser = Parser::new_ext(&md_string, options);
@@ -142,10 +142,10 @@ fn transform_md (paste: &Paste, store: &PasteStore) -> Result<String, AppError> 
                 else if in_code_block {
                     in_code_block = false;
                     
-                    let syntax = store.syntax_set.find_syntax_by_token(&current_lang)
-                    .unwrap_or_else(|| store.syntax_set.find_syntax_plain_text());
+                    let syntax = style_store.syntax_set.find_syntax_by_token(&current_lang)
+                    .unwrap_or_else(|| style_store.syntax_set.find_syntax_plain_text());
     
-                    let highlighted_html = highlighted_html_for_string(&code_buffer, &store.syntax_set, syntax, theme).map_err(|_| AppError::MarkdownParserFailed)?;
+                    let highlighted_html = highlighted_html_for_string(&code_buffer, &style_store.syntax_set, syntax, theme).map_err(|_| AppError::MarkdownParserFailed)?;
     
                     new_events.push(Event::Html(highlighted_html.into()));
                 }            

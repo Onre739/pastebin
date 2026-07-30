@@ -1,12 +1,32 @@
+use std::sync::{Arc, Mutex};
+
+use mermaid_svg::ast::Style;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::model::Paste;
+#[derive(Clone)]
+pub struct AppState {
+    pub paste_store: Arc<Mutex<PasteStore>>,
+    pub style_store: Arc<StyleStore>,
+}
+
+pub struct StyleStore {
+    pub syntax_set: SyntaxSet,
+    pub theme_set: ThemeSet,
+}
+
+impl StyleStore {
+    pub fn new() -> Self {
+        Self { 
+            syntax_set: SyntaxSet::load_defaults_newlines(), 
+            theme_set: ThemeSet::load_defaults() 
+        }
+    }
+}
 
 pub struct PasteStore {
     pub pastes: Vec<Paste>,
     pub max_pastes: usize,
-    pub syntax_set: SyntaxSet,
-    pub theme_set: ThemeSet,
 }
 
 impl PasteStore {
@@ -46,10 +66,13 @@ impl PasteStore {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::sync::{Arc, Mutex};
+
+use super::*;
 
     #[test]
     fn idk(){
+        
         
     }
 

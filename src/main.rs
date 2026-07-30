@@ -17,16 +17,15 @@ async fn main() {
     // Load .env
     dotenvy::dotenv();
     
-    // Loading resources
-    let ss = SyntaxSet::load_defaults_newlines();
-    let ts = ThemeSet::load_defaults();
     let max_pastes: usize = env::var("MAX_PASTES")
         .expect("MAX_PASTES must be defined in .env!")
         .parse()
         .expect("MAX_PASTES must be valid number (usize)");
-
+    
     // Create app state
-    let state = Arc::new(Mutex::new( store::PasteStore { pastes: Vec::new(), max_pastes: max_pastes, syntax_set: ss, theme_set: ts } ));
+    let paste_store =  Arc::new(Mutex::new(store::PasteStore { pastes: Vec::new(), max_pastes: max_pastes }));
+    let style_store = Arc::new(store::StyleStore::new());
+    let state = store::AppState{paste_store: paste_store, style_store: style_store};
 
     let app = routes::create_router(state);
 
