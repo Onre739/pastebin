@@ -20,6 +20,24 @@ pub struct Paste {
     pub last_seen_tick: u64,       // "generace" naposledy zobrazeno, pro nalezení kandidáta k evikci
 }
 
+impl Paste {
+
+    pub fn increment_hits ( &mut self ) {
+        self.hits += 1;
+    }
+
+    pub fn decrement_hits ( &mut self) {
+        if self.hits > 0 {
+            self.hits -= 1;
+        }
+    }
+
+    pub fn update ( &mut self, tick: u64) {
+        self.last_seen_tick = tick;
+        self.increment_hits();
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum MimeKind {
     PlainText,

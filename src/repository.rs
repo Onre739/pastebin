@@ -41,8 +41,9 @@ pub fn process_paste (store: &mut PasteStore, style_store: &StyleStore, id: Uuid
     // 1. Find idex
     let index = store.pastes.iter().position(|p| p.id == id).ok_or(AppError::NotFound)?;
     
-    // 2. Increment hits
-    store.pastes[index].hits += 1;
+    // 2. Increment hit & tick
+    let tick = store.get_next_tick();
+    store.pastes[index].update(tick);
 
     // 3. Get paste
     let paste = &store.pastes[index];
@@ -80,16 +81,6 @@ pub fn process_paste (store: &mut PasteStore, style_store: &StyleStore, id: Uuid
             ).into_response()
         }
     };
-
-    // 3. Switch place to front of vector
-    //store.move_to_front(index);
-
-    // 4. Check max pastes
-    let is_full = store.pastes.len() > store.max_pastes;
-
-    if is_full {
-        store.process_full_capacity();
-    }
 
     Ok(response)        
 }
@@ -208,8 +199,8 @@ use super::*;
                 second_id = paste_store.pastes[1].id; 
             }
             else if i == 0 {
-                PasteStore::increment_hits(&mut paste_store.pastes[0]);
-                PasteStore::increment_hits(&mut paste_store.pastes[0]);
+                paste_store.pastes[0].increment_hits();
+                paste_store.pastes[0].increment_hits();
                 println!("Incremented hits for paste 0: {}", paste_store.pastes[0].hits);
             }
         }
@@ -230,7 +221,7 @@ use super::*;
         process_paste(&mut paste_store, &style_store, id).expect("Paste processing failed");
 
         assert_eq!(paste_store.pastes[0].hits, 1, "Hits should have been incremented");
-        assert_eq!(paste_store.pastes[0].last_seen_tick, 1, "Last seen tick should have been incremented");
+        assert_eq!(paste_store.pastes[0].last_seen_tick, 2, "Last seen tick should have been incremented to 2 (1 for insert, 1 for access)");
     }
 
     #[test]

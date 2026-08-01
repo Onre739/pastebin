@@ -37,23 +37,13 @@ impl PasteStore {
         PasteStore { pastes: Vec::new(), max_pastes, current_tick: 0 }
     }
 
-    pub fn increment_hits ( paste: &mut Paste) {
-        paste.hits += 1;
-    }
-
-    pub fn decrement_hits ( paste: &mut Paste) {
-        if paste.hits > 0 {
-            paste.hits -= 1;
-        }
-    }
-
-    pub fn next_tick (&mut self) -> u64 {
+    pub fn get_next_tick (&mut self) -> u64 {
         self.current_tick += 1;
         self.current_tick
     }
 
     pub fn insert_paste (&mut self, mut paste: Paste) {
-        paste.last_seen_tick = self.next_tick();
+        paste.last_seen_tick = self.get_next_tick();
         self.pastes.push(paste);
     }
     
@@ -99,7 +89,7 @@ impl PasteStore {
         loop {
             let last_seen_paste_index = self.find_last_seen_paste(&self.pastes, &indexes_to_skip).ok_or(AppError::FullCapacityEvictionFailed)?;
             let last_paste = &mut self.pastes[last_seen_paste_index];
-            Self::decrement_hits(last_paste);
+            last_paste.decrement_hits();
 
             if last_paste.hits == 0 {
                 self.pastes.remove(last_seen_paste_index);
