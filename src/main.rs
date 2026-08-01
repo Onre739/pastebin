@@ -23,7 +23,7 @@ async fn main() {
         .expect("MAX_PASTES must be valid number (usize)");
     
     // Create app state
-    let paste_store =  Arc::new(Mutex::new(store::PasteStore { pastes: Vec::new(), max_pastes: max_pastes }));
+    let paste_store =  Arc::new(Mutex::new(store::PasteStore::new(max_pastes)));
     let style_store = Arc::new(store::StyleStore::new());
     let state = store::AppState{paste_store: paste_store, style_store: style_store};
 

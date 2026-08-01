@@ -16,7 +16,7 @@ pub fn process_homepage (store: &PasteStore) -> Result<Html<String>, AppError> {
     Ok(Html(html_content))
 }
 
-pub fn process_post (store: &mut PasteStore, name: String, content: String, mimetype: MimeKind) -> Result<Uuid, AppError> {
+pub fn process_post (paste_store: &mut PasteStore, name: String, content: String, mimetype: MimeKind) -> Result<Uuid, AppError> {
     let id = Uuid::new_v4();
     let paste = Paste {
         id,
@@ -28,8 +28,13 @@ pub fn process_post (store: &mut PasteStore, name: String, content: String, mime
     };
 
     println!("Paste: {:#?}", paste);
+
+    if paste_store.check_full_capacity() {
+        paste_store.process_full_capacity()?;
+    }
+
+    paste_store.insert_paste(paste);
     
-    store.pastes.push(paste);
     Ok(id)
 }
 
@@ -79,7 +84,7 @@ pub fn process_paste (store: &mut PasteStore, style_store: &StyleStore, id: Uuid
     };
 
     // 3. Switch place to front of vector
-    store.move_to_front(index);
+    //store.move_to_front(index);
 
     // 4. Check max pastes
     let is_full = store.pastes.len() > store.max_pastes;

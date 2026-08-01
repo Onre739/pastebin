@@ -2,12 +2,19 @@ use std::sync::{Arc, Mutex};
 
 use mermaid_svg::ast::Style;
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
+use uuid::Uuid;
 
-use crate::model::Paste;
+use crate::model::{AppError, Paste};
 #[derive(Clone)]
 pub struct AppState {
     pub paste_store: Arc<Mutex<PasteStore>>,
     pub style_store: Arc<StyleStore>,
+}
+
+pub struct PasteStore {
+    pub pastes: Vec<Paste>,
+    pub max_pastes: usize,
+    pub current_tick: u64,
 }
 
 pub struct StyleStore {
@@ -24,58 +31,73 @@ impl StyleStore {
     }
 }
 
-pub struct PasteStore {
-    pub pastes: Vec<Paste>,
-    pub max_pastes: usize,
-}
-
 impl PasteStore {
+
+    pub fn new (max_pastes: usize) -> Self {
+        PasteStore { pastes: Vec::new(), max_pastes, current_tick: 0 }
+    }
+
+    pub fn increment_hits ( paste: &mut Paste) {
+        paste.hits += 1;
+    }
+
+    pub fn decrement_hits ( paste: &mut Paste) {
+        if paste.hits > 0 {
+            paste.hits -= 1;
+        }
+    }
+
+    pub fn next_tick (&mut self) -> u64 {
+        self.current_tick += 1;
+        self.current_tick
+    }
+
+    pub fn insert_paste (&mut self, paste: Paste) {
+        self.pastes.push(paste);
+    }
     
-    pub fn process_full_capacity (&mut self) -> bool {
-        let mut counter = 0;
-        let len = self.pastes.len();
+    pub fn check_full_capacity(&self) -> bool {
+        self.pastes.len() >= self.max_pastes
+    }
+
+    pub fn find_last_seen_paste(&self, pastes: &Vec<Paste>, indexes_to_skip : &Vec<usize>) -> usize {
+        let mut i = 0;
+        let mut last_seen_paste_index = 0;
+        for p in pastes {
+            
+            let skip = indexes_to_skip.iter().any(|x| *x == i);
+            
+            if !skip && p.last_seen_tick <= pastes[last_seen_paste_index].last_seen_tick {
+                last_seen_paste_index = i;
+            }
+            i += 1;
+        }
+        last_seen_paste_index
+    }
+
+    pub fn process_full_capacity (&mut self) -> Result<bool, AppError> {
+        let mut indexes_to_skip: Vec<usize> = Vec::new();
         
         loop {
-            let index =  len - counter - 1;
+            let last_seen_paste_index = self.find_last_seen_paste(&self.pastes, &indexes_to_skip);
+            let last_paste = &mut self.pastes[last_seen_paste_index];
+            Self::decrement_hits(last_paste);
 
-            let paste = &mut self.pastes[index];
-            paste.hits -= 1;
-
-            if paste.hits <= 0 {
-                self.pastes.remove(index);
-                break true
-            } 
-    
+            if last_paste.hits == 0 {
+                self.pastes.remove(last_seen_paste_index);
+                break Ok(true)
+            }
             else {
-                if (counter >= (len - 2)) { counter = 0; } // -2 because i dont want to decrese from new added paste (index 0)
-                else { counter += 1; }
+                indexes_to_skip.push(last_seen_paste_index);
+
+                if indexes_to_skip.len() >= self.pastes.len() {
+                    indexes_to_skip.clear();
+                }
             }
         }
-
     }
-
-    pub fn move_to_front (&mut self, index: usize) {
-        if index < self.pastes.len() && index > 0 {
-            let paste = self.pastes.remove(index);
-            self.pastes.insert(0, paste);
-        }
-    }
-
-
 }
 
-#[cfg(test)]
-mod tests {
-    use std::sync::{Arc, Mutex};
 
-use super::*;
-
-    #[test]
-    fn idk(){
-        
-        
-    }
-
-}
 
 

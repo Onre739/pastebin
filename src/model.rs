@@ -36,6 +36,8 @@ pub enum AppError {
     BadRequest (FromUtf8Error),
     MarkdownParserFailed,
     MermaidRenderError(RenderError),
+    FullCapacityEvictionFailed,
+
 }
 
 impl IntoResponse for AppError {
@@ -61,6 +63,9 @@ impl IntoResponse for AppError {
             }
             AppError::MermaidRenderError(e) => {
                 (StatusCode::BAD_REQUEST, format!("Mermaid render failed: {}", e)).into_response()
+            }
+            AppError::FullCapacityEvictionFailed => {
+                (StatusCode::BAD_REQUEST, "Full capacity eviction failed").into_response()
             }
         }
     }
