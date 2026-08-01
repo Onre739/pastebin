@@ -28,6 +28,7 @@ pub enum MimeKind {
     OctetStream,
 }
 
+#[derive(Debug)]
 pub enum AppError {
     NotFound,
     InvalidMimeType,

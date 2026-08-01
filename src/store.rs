@@ -52,7 +52,8 @@ impl PasteStore {
         self.current_tick
     }
 
-    pub fn insert_paste (&mut self, paste: Paste) {
+    pub fn insert_paste (&mut self, mut paste: Paste) {
+        paste.last_seen_tick = self.next_tick();
         self.pastes.push(paste);
     }
     
@@ -115,6 +116,57 @@ impl PasteStore {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex, MutexGuard};
+    use uuid::Uuid;
 
+use crate::model::MimeKind;
+
+use super::*;
+
+    fn create_empty_store (max_pastes: usize) -> Arc<Mutex<PasteStore>> {
+        Arc::new(Mutex::new(PasteStore::new(max_pastes)))
+        //let paste_store = store_guard.lock().unwrap();
+        //paste_store
+    }
+
+    fn create_test_paste () -> Paste {
+        let id = Uuid::new_v4();
+        Paste {
+            id,
+            name: format!("Pepa - {}", id),
+            content: Vec::new(),
+            mimetype: MimeKind::PlainText,
+            hits: 0,
+            last_seen_tick: 0
+        }
+    }
+
+    #[test]
+    fn insert_paste(){
+        let store_arc = create_empty_store(5);
+        let mut paste_store = store_arc.lock().unwrap();
+        
+        let paste1 = create_test_paste();
+        paste_store.insert_paste(paste1);
+
+        assert_eq!(paste_store.pastes.len(), 1);
+    }
+
+    #[test]
+    fn insert_limit(){
+        let store_arc = create_empty_store(5);
+        let mut paste_store = store_arc.lock().unwrap();
+        for i in 0..5 {
+            let paste = create_test_paste();
+            paste_store.insert_paste(paste);
+        }
+
+        assert_eq!(paste_store.pastes.len(), 5);
+    }
+
+    
+}
 
 
