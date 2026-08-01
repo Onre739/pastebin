@@ -60,9 +60,26 @@ impl PasteStore {
         self.pastes.len() >= self.max_pastes
     }
 
-    pub fn find_last_seen_paste(&self, pastes: &Vec<Paste>, indexes_to_skip : &Vec<usize>) -> usize {
+    pub fn find_last_seen_paste(&self, pastes: &Vec<Paste>, indexes_to_skip : &Vec<usize>) -> Option<usize> {
         let mut i = 0;
-        let mut last_seen_paste_index = 0;
+
+        // Initialize last_seen_paste_index to the first index that is not in indexes_to_skip
+        let mut last_seen_paste_index = {
+            let mut f = 0;
+            loop {
+                if !indexes_to_skip.iter().any(|x| *x == f) {
+                    break f;
+                }
+
+                if f >= pastes.len() - 1 {
+                    return None;
+                }
+
+                f += 1;
+            }
+        };
+
+
         for p in pastes {
             
             let skip = indexes_to_skip.iter().any(|x| *x == i);
@@ -72,14 +89,14 @@ impl PasteStore {
             }
             i += 1;
         }
-        last_seen_paste_index
+        Some(last_seen_paste_index)
     }
 
     pub fn process_full_capacity (&mut self) -> Result<bool, AppError> {
         let mut indexes_to_skip: Vec<usize> = Vec::new();
         
         loop {
-            let last_seen_paste_index = self.find_last_seen_paste(&self.pastes, &indexes_to_skip);
+            let last_seen_paste_index = self.find_last_seen_paste(&self.pastes, &indexes_to_skip).ok_or(AppError::FullCapacityEvictionFailed)?;
             let last_paste = &mut self.pastes[last_seen_paste_index];
             Self::decrement_hits(last_paste);
 

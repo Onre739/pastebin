@@ -37,7 +37,6 @@ pub enum AppError {
     MarkdownParserFailed,
     MermaidRenderError(RenderError),
     FullCapacityEvictionFailed,
-
 }
 
 impl IntoResponse for AppError {
