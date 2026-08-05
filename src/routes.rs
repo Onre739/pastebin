@@ -1,11 +1,9 @@
 use axum::{
-    Json, Router, extract::{Path,State, Form}, http::{StatusCode, header}, response::{Html, IntoResponse, Redirect}, routing::{get, post},
+    Json, Router, extract::{Path,State, Form}, response::{IntoResponse}, routing::{get, post},
 };
-use std::{option, result, sync::{Arc, Mutex}};
 use uuid::Uuid;
-use crate::{model::{self, AppError}, store::{AppState, StyleStore}};
-use crate::store::PasteStore;
-use crate::repository;
+use crate::{model::{self, AppError}, store::{AppState}};
+use crate::render;
 
 pub fn create_router(state: AppState) -> Router {
     let app = Router::new()
@@ -21,14 +19,14 @@ async fn get_home(State(state): State<AppState>)
 -> Result<impl IntoResponse, AppError> {
     let paste_store = state.paste_store.lock().unwrap();
      
-    let html = repository::process_homepage(&paste_store)?;
+    let html = render::render_home_page(&paste_store)?;
     Ok(html)
 }
 
 async fn post_paste_json(State(state): State<AppState>, Json(payload): Json<model::CreatePasteDto>) 
 -> Result<impl IntoResponse, AppError> {
     let mut paste_store = state.paste_store.lock().unwrap();
-    let id = repository::process_post(&mut paste_store, payload.name, payload.content, payload.mimetype)?;
+    let id = paste_store.insert(payload.name, payload.content, payload.mimetype)?;
     
     Ok(Json(id))
 }
@@ -36,19 +34,16 @@ async fn post_paste_json(State(state): State<AppState>, Json(payload): Json<mode
 async fn post_paste_form(State(state): State<AppState>, Form(form): Form<model::CreatePasteDto>) 
 -> Result <impl IntoResponse, AppError> {
     let mut paste_store = state.paste_store.lock().unwrap();
-    let id = repository::process_post(&mut paste_store, form.name, form.content, form.mimetype)?;
+    let id = paste_store.insert(form.name, form.content, form.mimetype)?;
 
     Ok(Json(id))
 }
 
 async fn get_paste(Path(uuid): Path<Uuid>, State(state): State<AppState>) 
 -> Result<impl IntoResponse, AppError> {
-    println!("Looking for paste with UUID: {}", uuid);
-
     let mut paste_store = state.paste_store.lock().unwrap();
-
-    let paste_store = &mut paste_store;
     let style_store = &state.style_store;
 
-    repository::process_paste(paste_store, style_store, uuid)
+    let paste = paste_store.record_view(uuid)?;
+    render::render_paste_page(&paste, style_store)
 }

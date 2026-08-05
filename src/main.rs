@@ -1,13 +1,10 @@
-use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 use tokio::net::TcpListener;
-use uuid::Uuid;
 use std::{sync::{Arc, Mutex}, env};
 
 mod routes;
 mod render;
 mod model;
 mod store;
-mod repository;
 
 #[tokio::main]
 async fn main() {
