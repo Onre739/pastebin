@@ -198,7 +198,7 @@
                 const id = await response.json();
                 window.location.href = '/paste/' + id;
             } else {
-                console.error('Failed to submit paste');
+                console.error(`HTTP Chyba: ${response.status} - ${response.statusText}`);
             }
         });
     </script>

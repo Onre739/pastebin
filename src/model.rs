@@ -6,7 +6,7 @@ use std::string::FromUtf8Error;
 #[derive(Deserialize)]
 pub struct CreatePasteDto {
     pub name: String,
-    pub content: Vec<u8>,
+    pub content: String,
     pub mimetype: MimeKind,
 }
 

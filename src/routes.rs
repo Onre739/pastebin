@@ -26,7 +26,7 @@ async fn get_home(State(state): State<AppState>)
 async fn post_paste_json(State(state): State<AppState>, Json(payload): Json<model::CreatePasteDto>) 
 -> Result<impl IntoResponse, AppError> {
     let mut paste_store = state.paste_store.lock().unwrap();
-    let id = paste_store.insert(payload.name, payload.content, payload.mimetype)?;
+    let id = paste_store.insert(payload.name, payload.content.into_bytes(), payload.mimetype)?;
     
     Ok(Json(id))
 }
@@ -34,7 +34,7 @@ async fn post_paste_json(State(state): State<AppState>, Json(payload): Json<mode
 async fn post_paste_form(State(state): State<AppState>, Form(form): Form<model::CreatePasteDto>) 
 -> Result <impl IntoResponse, AppError> {
     let mut paste_store = state.paste_store.lock().unwrap();
-    let id = paste_store.insert(form.name, form.content, form.mimetype)?;
+    let id = paste_store.insert(form.name, form.content.into_bytes(), form.mimetype)?;
 
     Ok(Json(id))
 }

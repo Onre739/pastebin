@@ -40,7 +40,7 @@ impl PasteStore {
         self.current_tick
     }
 
-    pub fn insert (&mut self, name: String, content: Vec<u8>, mimetype: MimeKind) -> Result<bool, AppError> {
+    pub fn insert (&mut self, name: String, content: Vec<u8>, mimetype: MimeKind) -> Result<Uuid, AppError> {
         if self.check_full_capacity() {
             self.process_full_capacity()?;
         }   
@@ -56,7 +56,7 @@ impl PasteStore {
         };
 
         self.pastes.push(paste);
-        Ok(true)
+        Ok(id)
     }
 
     pub fn record_view (&mut self, uuid: Uuid) -> Result<&Paste, AppError> {
