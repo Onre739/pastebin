@@ -147,3 +147,112 @@ fn transform_md (paste: &Paste, style_store: &StyleStore) -> Result<String, AppE
     Ok(html_output)
 }
 
+#[cfg(test)]
+mod tests {
+
+    use uuid::Uuid;
+
+use super::*;
+
+
+    #[test]
+    fn md_to_html() {
+        let paste = Paste {
+            id: Uuid::new_v4(),
+            name: "Test Markdown".to_string(),
+            content: b"# Heading\n\nThis is **bold** and *italic* text.\n\n- item one\n- item two\n".to_vec(),
+            mimetype: MimeKind::Markdown,
+            hits: 0,
+            last_seen_tick: 0
+        };
+
+        let style_store = StyleStore::new();
+        let html = transform_md(&paste, &style_store).expect("Markdown transform failed");
+
+        assert!(html.contains("<h1>Heading</h1>"), "Heading not converted to <h1>");
+        assert!(html.contains("<strong>bold</strong>"), "Bold text not converted to <strong>");
+        assert!(html.contains("<em>italic</em>"), "Italic text not converted to <em>");
+        assert!(html.contains("<li>item one</li>") && html.contains("<li>item two</li>"), "List items not converted to <li>");
+    }
+
+    #[test]
+    fn highlight_code_block() {
+        let paste = Paste {
+            id: Uuid::new_v4(),
+            name: "Test Rust".to_string(),
+            content: b"```rust\nlet a = \"hello world\";\n```".to_vec(),
+            mimetype: MimeKind::Markdown,
+            hits: 0,
+            last_seen_tick: 0
+        };
+
+        let style_store = StyleStore::new();
+        let html = transform_md(&paste, &style_store).expect("Markdown transform failed");
+
+        assert!(html.contains("<pre") && html.contains("</pre>"), "Code block not found in HTML output");
+        assert!(html.contains(r#"style="color:"#), "Syntax highlighting not found in HTML output");
+    }
+
+    #[test]
+    fn mermaid() {
+        let paste = Paste {
+            id: Uuid::new_v4(),
+            name: "Test Mermaid".to_string(),
+            content: b"```mermaid\ngraph TD;\nA-->B;\nB-->C;\nC-->A;\n```".to_vec(),
+            mimetype: MimeKind::Markdown,
+            hits: 0,
+            last_seen_tick: 0
+        };
+
+        let style_store = StyleStore::new();
+        let html = transform_md(&paste, &style_store).expect("Markdown transform failed");
+
+        assert!(html.contains("<svg ") && html.contains("</svg>"), "Mermaid SVG not found in HTML output");
+    }
+
+    // #[tokio::test]
+    // async fn plain_text() {
+    //     let paste = Paste {
+    //         id: Uuid::new_v4(),
+    //         name: "Test Plain Text".to_string(),
+    //         content: b"Hello, World!".to_vec(),
+    //         mimetype: MimeKind::PlainText,
+    //         hits: 0,
+    //         last_seen_tick: 0
+    //     };
+
+    //     let style_store = StyleStore::new();
+    //     let response = render_paste_page(&paste, &style_store).expect("render_paste_page failed");
+
+    //     let content_type = response.headers().get(header::CONTENT_TYPE).expect("missing Content-Type").to_str().unwrap();
+    //     assert_eq!(content_type, "text/plain; charset=utf-8");
+
+    //     let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("failed to read body");
+    //     assert_eq!(body.as_ref(), paste.content.as_slice(), "PlainText body should pass through unchanged");
+    // }
+
+    // #[tokio::test]
+    // async fn octet_stream() {
+    //     let paste = Paste {
+    //         id: Uuid::new_v4(),
+    //         name: "Test Octet Stream".to_string(),
+    //         content: vec![0u8, 159, 146, 150, 1, 2, 3, 255],
+    //         mimetype: MimeKind::OctetStream,
+    //         hits: 0,
+    //         last_seen_tick: 0
+    //     };
+
+    //     let style_store = StyleStore::new();
+    //     let response = render_paste_page(&paste, &style_store).expect("render_paste_page failed");
+
+    //     let content_type = response.headers().get(header::CONTENT_TYPE).expect("missing Content-Type").to_str().unwrap();
+    //     assert_eq!(content_type, "application/octet-stream");
+
+    //     let content_disposition = response.headers().get(header::CONTENT_DISPOSITION).expect("missing Content-Disposition").to_str().unwrap();
+    //     assert!(content_disposition.contains("attachment"), "Content-Disposition should mark the response as an attachment");
+    //     assert!(content_disposition.contains(&paste.id.to_string()), "Content-Disposition filename should contain the paste id");
+
+    //     let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("failed to read body");
+    //     assert_eq!(body.as_ref(), paste.content.as_slice(), "OctetStream body should pass through unchanged");
+    // }
+}

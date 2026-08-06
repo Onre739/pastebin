@@ -1,9 +1,17 @@
 use axum::{
     Json, Router, extract::{Path,State, Form}, response::{IntoResponse}, routing::{get, post},
 };
+use serde::Deserialize;
 use uuid::Uuid;
-use crate::{model::{self, AppError}, store::{AppState}};
+use crate::{model::{AppError, MimeKind}, store::AppState};
 use crate::render;
+
+#[derive(Deserialize)]
+pub struct CreatePasteDto {
+    pub name: String,
+    pub content: String,
+    pub mimetype: MimeKind,
+}
 
 pub fn create_router(state: AppState) -> Router {
     let app = Router::new()
@@ -23,7 +31,7 @@ async fn get_home(State(state): State<AppState>)
     Ok(html)
 }
 
-async fn post_paste_json(State(state): State<AppState>, Json(payload): Json<model::CreatePasteDto>) 
+async fn post_paste_json(State(state): State<AppState>, Json(payload): Json<CreatePasteDto>) 
 -> Result<impl IntoResponse, AppError> {
     let mut paste_store = state.paste_store.lock().unwrap();
     let id = paste_store.insert(payload.name, payload.content.into_bytes(), payload.mimetype)?;
@@ -31,7 +39,7 @@ async fn post_paste_json(State(state): State<AppState>, Json(payload): Json<mode
     Ok(Json(id))
 }
 
-async fn post_paste_form(State(state): State<AppState>, Form(form): Form<model::CreatePasteDto>) 
+async fn post_paste_form(State(state): State<AppState>, Form(form): Form<CreatePasteDto>) 
 -> Result <impl IntoResponse, AppError> {
     let mut paste_store = state.paste_store.lock().unwrap();
     let id = paste_store.insert(form.name, form.content.into_bytes(), form.mimetype)?;

@@ -133,7 +133,6 @@ impl PasteStore {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
     use uuid::Uuid;
 
 use crate::model::MimeKind;
@@ -228,7 +227,7 @@ use super::*;
     
     #[test]
     fn same_tick () {
-        let mut paste_store = create_empty_store(5);
+        let paste_store = create_empty_store(5);
 
         let pastes = vec![
             create_test_paste(),

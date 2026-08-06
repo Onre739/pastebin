@@ -12,7 +12,7 @@ async fn main() {
     println!("Starting server...");
 
     // Load .env
-    dotenvy::dotenv();
+    let _ = dotenvy::dotenv();
     
     let max_pastes: usize = env::var("MAX_PASTES")
         .expect("MAX_PASTES must be defined in .env!")
