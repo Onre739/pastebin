@@ -1,5 +1,5 @@
 use axum::{
-    Json, Router, extract::{Path,State, Form}, response::{IntoResponse}, routing::{get, post},
+    Json, Router, extract::{/*DefaultBodyLimit,*/ Form, Path, State}, response::IntoResponse, routing::{get, post},
 };
 use serde::Deserialize;
 use uuid::Uuid;
@@ -14,11 +14,14 @@ pub struct CreatePasteDto {
 }
 
 pub fn create_router(state: AppState) -> Router {
+    //const MAX_BODY_SIZE: usize = 1024 * 1024; // 1 MB
+    
     let app = Router::new()
         .route("/", get(get_home))
         .route("/paste/json", post(post_paste_json))
         .route("/paste/form", post(post_paste_form))
         .route("/paste/{uuid}", get(get_paste))
+        //.layer(DefaultBodyLimit::max(MAX_BODY_SIZE))
         .with_state(state);
     app
 }
@@ -40,7 +43,7 @@ async fn post_paste_json(State(state): State<AppState>, Json(payload): Json<Crea
 }
 
 async fn post_paste_form(State(state): State<AppState>, Form(form): Form<CreatePasteDto>) 
--> Result <impl IntoResponse, AppError> {
+-> Result<impl IntoResponse, AppError> {
     let mut paste_store = state.paste_store.lock().unwrap();
     let id = paste_store.insert(form.name, form.content.into_bytes(), form.mimetype)?;
 

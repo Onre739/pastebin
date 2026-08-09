@@ -142,21 +142,40 @@
             color: var(--muted);
             font-size: 0.9rem;
         }
+
+        .form-error {
+            display: none;
+            margin: 14px 0 0;
+            padding: 8px 10px;
+            border: 1px solid #a33;
+            border-radius: 6px;
+            background: rgba(170, 51, 51, 0.15);
+            color: #ff9b9b;
+            font-size: 0.85rem;
+        }
+
+        .form-error.visible {
+            display: block;
+        }
+
+        input.invalid, textarea.invalid {
+            border-color: #a33;
+        }
     </style>
 </head>
 <body>
     <div class="page">
-        <h1>Pastebin</h1>
+        <h1>Pastebin by Onre</h1>
 
         <div class="layout">
             <div class="panel">
                 <h3>Submit a Paste</h3>
                 <form id="paste-form">
                     <label for="name">Name</label>
-                    <input type="text" id="name">
+                    <input type="text" id="name" required>
 
                     <label for="content">Content</label>
-                    <textarea id="content" placeholder="Content"></textarea>
+                    <textarea id="content" placeholder="Content" required></textarea>
 
                     <label for="mimetype">MIME Type</label>
                     <select id="mimetype">
@@ -165,6 +184,8 @@
                         <option value="Markdown">Markdown</option>
                         <option value="OctetStream">Octet Stream</option>
                     </select>
+
+                    <p id="form-error" class="form-error"></p>
 
                     <button id="submit">Submit</button>
                 </form>
@@ -180,11 +201,52 @@
     </div>
 
     <script>
+        const nameInput = document.getElementById('name');
+        const contentInput = document.getElementById('content');
+        const formError = document.getElementById('form-error');
+
+        function showFormError(message) {
+            formError.textContent = message;
+            formError.classList.add('visible');
+        }
+
+        function clearFormError() {
+            formError.textContent = '';
+            formError.classList.remove('visible');
+        }
+
+        function validateForm(nameValue, contentValue) {
+            nameInput.classList.remove('invalid');
+            contentInput.classList.remove('invalid');
+
+            const missing = [];
+            if (nameValue.trim() === '') {
+                nameInput.classList.add('invalid');
+                missing.push('Name');
+            }
+            if (contentValue.trim() === '') {
+                contentInput.classList.add('invalid');
+                missing.push('Content');
+            }
+
+            if (missing.length > 0) {
+                showFormError(`${missing.join(' and ')} must not be empty.`);
+                return false;
+            }
+
+            clearFormError();
+            return true;
+        }
+
         document.getElementById('submit').addEventListener('click', async (event) => {
             event.preventDefault();
-            const nameValue = document.getElementById('name').value;
-            const contentValue = document.getElementById('content').value;
+            const nameValue = nameInput.value;
+            const contentValue = contentInput.value;
             const mimetypeValue = document.getElementById('mimetype').value;
+
+            if (!validateForm(nameValue, contentValue)) {
+                return;
+            }
 
             const response = await fetch('/paste/json', {
                 method: 'POST',
@@ -198,6 +260,7 @@
                 const id = await response.json();
                 window.location.href = '/paste/' + id;
             } else {
+                showFormError(`HTTP Chyba: ${response.status} - ${response.statusText}`);
                 console.error(`HTTP Chyba: ${response.status} - ${response.statusText}`);
             }
         });

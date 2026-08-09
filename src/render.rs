@@ -76,7 +76,7 @@ pub fn render_paste_page(paste: &Paste, style_store: &StyleStore) -> Result<Resp
 fn transform_md (paste: &Paste, style_store: &StyleStore) -> Result<String, AppError> {
     
     // 1. Pulldown cmark
-    let md_string = String::from_utf8(paste.content.clone()).map_err(|e| AppError::BadRequest(e))?;
+    let md_string = String::from_utf8(paste.content.clone()).map_err(|e| AppError::BadRequest(e.to_string()))?;
     // map_err is needed for "?" operator, from_utf8 returns Result<String, FromUtf8Error> but ? needs AppError
 
     let mut options = Options::empty();

@@ -492,6 +492,7 @@ dependencies = [
  "serde",
  "syntect",
  "tokio",
+ "tower",
  "uuid",
 ]
 

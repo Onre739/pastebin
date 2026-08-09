@@ -12,6 +12,7 @@ pub struct AppState {
 pub struct PasteStore {
     pub pastes: Vec<Paste>,
     pub max_pastes: usize,
+    pub max_paste_size: usize,
     pub current_tick: u64,
 }
 
@@ -31,8 +32,8 @@ impl StyleStore {
 
 impl PasteStore {
 
-    pub fn new (max_pastes: usize) -> Self {
-        PasteStore { pastes: Vec::new(), max_pastes, current_tick: 0 }
+    pub fn new (max_pastes: usize, max_paste_size: usize) -> Self {
+        PasteStore { pastes: Vec::new(), max_pastes, max_paste_size, current_tick: 0 }
     }
 
     pub fn get_next_tick (&mut self) -> u64 {
@@ -41,19 +42,12 @@ impl PasteStore {
     }
 
     pub fn insert (&mut self, name: String, content: Vec<u8>, mimetype: MimeKind) -> Result<Uuid, AppError> {
+        let paste = Paste::new(name, content, mimetype, self.get_next_tick(), self.max_paste_size)?;
+        let id = paste.id;
+
         if self.check_full_capacity() {
             self.process_full_capacity()?;
         }   
-
-        let id = Uuid::new_v4();
-        let paste = Paste {
-            id,
-            name: name,
-            content: content,
-            mimetype: mimetype,
-            hits: 0,
-            last_seen_tick: self.get_next_tick()
-        };
 
         self.pastes.push(paste);
         Ok(id)
@@ -138,7 +132,7 @@ mod tests {
 use crate::model::MimeKind;
 use super::*;
     fn create_empty_store (max_pastes: usize) -> PasteStore {
-        PasteStore::new(max_pastes)
+        PasteStore::new(max_pastes, 1_048_576)
     }
 
     fn create_test_paste () -> Paste {
@@ -146,7 +140,7 @@ use super::*;
         Paste {
             id,
             name: format!("Pepa - {}", id),
-            content: Vec::new(),
+            content: b"test content".to_vec(),
             mimetype: MimeKind::PlainText,
             hits: 0,
             last_seen_tick: 0
