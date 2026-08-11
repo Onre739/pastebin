@@ -3,26 +3,12 @@ use mermaid_svg::render;
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd, html};
 use syntect::html::highlighted_html_for_string;
 use crate::model::{AppError, Paste, MimeKind};
-use crate::store::{PasteStore, StyleStore};
+use crate::store::StyleStore;
 
 const HOME_TEMPLATE: &str = include_str!("../templates/home.html");
-//const PASTE_TEMPLATE: &str = include_str!("../templates/paste.html");
 
-pub fn render_home_page(store: &PasteStore) -> Result<Html<String>, AppError> {
-
-    let list_items: String = store.pastes.iter().map(|paste| {
-        format!(r#"<li class="paste-item"><a href="/paste/{}"><span class="paste-name">{}</span><span class="paste-hits">{} hits</span></a></li>"#,
-            paste.id, paste.name, paste.hits)
-    }).collect::<Vec<String>>().join("\n");
-
-    let list_items = if list_items.is_empty() {
-        r#"<li class="paste-empty">No pastes yet.</li>"#.to_string()
-    } else {
-        list_items
-    };
-
-    let html_content = HOME_TEMPLATE.replace("{{PASTE_LIST}}", &list_items);
-    Ok(Html(html_content))
+pub fn render_home_page() -> Result<Html<String>, AppError> {
+    Ok(Html(HOME_TEMPLATE.to_string()))
 }
 
 pub fn render_paste_page(paste: &Paste, style_store: &StyleStore) -> Result<Response, AppError> {
@@ -37,7 +23,6 @@ pub fn render_paste_page(paste: &Paste, style_store: &StyleStore) -> Result<Resp
         MimeKind::Html => {
             ([(header::CONTENT_TYPE, "text/html; charset=utf-8")],
                 Html(paste.content.clone())
-                //Html(render::html_wrapper(paste.clone()))
             ).into_response()
         }
 
@@ -63,15 +48,6 @@ pub fn render_paste_page(paste: &Paste, style_store: &StyleStore) -> Result<Resp
 
     Ok(response)
 }
-
-// fn html_wrapper(paste: Paste) -> String {
-//     let content = String::from_utf8_lossy(&paste.content);
-
-//     PASTE_TEMPLATE
-//         .replace("{{NAME}}", &paste.name)
-//         .replace("{{ID}}", &paste.id.to_string())
-//         .replace("{{CONTENT}}", &content)
-// }
 
 fn transform_md (paste: &Paste, style_store: &StyleStore) -> Result<String, AppError> {
     
@@ -159,7 +135,6 @@ use super::*;
     fn md_to_html() {
         let paste = Paste {
             id: Uuid::new_v4(),
-            name: "Test Markdown".to_string(),
             content: b"# Heading\n\nThis is **bold** and *italic* text.\n\n- item one\n- item two\n".to_vec(),
             mimetype: MimeKind::Markdown,
             hits: 0,
@@ -179,7 +154,6 @@ use super::*;
     fn highlight_code_block() {
         let paste = Paste {
             id: Uuid::new_v4(),
-            name: "Test Rust".to_string(),
             content: b"```rust\nlet a = \"hello world\";\n```".to_vec(),
             mimetype: MimeKind::Markdown,
             hits: 0,
@@ -197,7 +171,6 @@ use super::*;
     fn mermaid() {
         let paste = Paste {
             id: Uuid::new_v4(),
-            name: "Test Mermaid".to_string(),
             content: b"```mermaid\ngraph TD;\nA-->B;\nB-->C;\nC-->A;\n```".to_vec(),
             mimetype: MimeKind::Markdown,
             hits: 0,
@@ -214,7 +187,6 @@ use super::*;
     async fn plain_text() {
         let paste = Paste {
             id: Uuid::new_v4(),
-            name: "Test Plain Text".to_string(),
             content: b"Hello, World!".to_vec(),
             mimetype: MimeKind::PlainText,
             hits: 0,
@@ -235,7 +207,6 @@ use super::*;
     async fn octet_stream() {
         let paste = Paste {
             id: Uuid::new_v4(),
-            name: "Test Octet Stream".to_string(),
             content: vec![0u8, 159, 146, 150, 1, 2, 3, 255],
             mimetype: MimeKind::OctetStream,
             hits: 0,

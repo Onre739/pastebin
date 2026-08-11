@@ -41,8 +41,8 @@ impl PasteStore {
         self.current_tick
     }
 
-    pub fn insert (&mut self, name: String, content: Vec<u8>, mimetype: MimeKind) -> Result<Uuid, AppError> {
-        let paste = Paste::new(name, content, mimetype, self.get_next_tick(), self.max_paste_size)?;
+    pub fn insert (&mut self, content: Vec<u8>, mimetype: MimeKind) -> Result<Uuid, AppError> {
+        let paste = Paste::new(content, mimetype, self.get_next_tick(), self.max_paste_size)?;
         let id = paste.id;
 
         if self.check_full_capacity() {
@@ -134,10 +134,8 @@ use super::*;
     }
 
     fn create_test_paste () -> Paste {
-        let id = Uuid::new_v4();
         Paste {
-            id,
-            name: format!("Pepa - {}", id),
+            id: Uuid::new_v4(),
             content: b"test content".to_vec(),
             mimetype: MimeKind::PlainText,
             hits: 0,
@@ -148,9 +146,9 @@ use super::*;
     #[test]
     fn insert(){
         let mut paste_store = create_empty_store(5);
-        
+
         let paste = create_test_paste();
-        paste_store.insert(paste.name, paste.content, paste.mimetype).expect("Insert failed");
+        paste_store.insert(paste.content, paste.mimetype).expect("Insert failed");
 
         assert_eq!(paste_store.pastes.len(), 1);
     }
@@ -158,9 +156,9 @@ use super::*;
     #[test]
     fn insert_limit(){
         let mut paste_store = create_empty_store(5);
-        for i in 0..5 {
+        for _ in 0..5 {
             let paste = create_test_paste();
-            paste_store.insert(format!("Paste {}", i), paste.content, paste.mimetype).expect("Insert failed");
+            paste_store.insert(paste.content, paste.mimetype).expect("Insert failed");
         }
 
         assert_eq!(paste_store.pastes.len(), 5);
@@ -170,27 +168,27 @@ use super::*;
     fn insert_max () {
         let mut paste_store = create_empty_store(5);
         let mut first_id = Uuid::nil();
-    
+
         for i in 0..6 {
             let paste = create_test_paste();
-            paste_store.insert(format!("Paste {}", i), paste.content, paste.mimetype).expect("Insert failed");
+            paste_store.insert(paste.content, paste.mimetype).expect("Insert failed");
             if i == 0 { first_id = paste_store.pastes[0].id; }
         }
-    
+
         assert_eq!(paste_store.pastes.len(), 5);
         assert!(!paste_store.pastes.iter().any(|p| p.id == first_id), "First paste should have been evicted");
     }
-    
+
     #[test]
     fn decrement_cyclus () {
         let mut paste_store = create_empty_store(5);
         let mut second_id = Uuid::nil();
-    
+
         for i in 0..6 {
             let paste = create_test_paste();
-            paste_store.insert(format!("Paste {}", i), paste.content, paste.mimetype).expect("Insert failed");
-            if i == 1 { 
-                second_id = paste_store.pastes[1].id; 
+            paste_store.insert(paste.content, paste.mimetype).expect("Insert failed");
+            if i == 1 {
+                second_id = paste_store.pastes[1].id;
             }
             else if i == 0 {
                 paste_store.pastes[0].increment_hits();
@@ -198,18 +196,18 @@ use super::*;
                 println!("Incremented hits for paste 0: {}", paste_store.pastes[0].hits);
             }
         }
-    
+
         assert_eq!(paste_store.pastes.len(), 5);
         assert!(!paste_store.pastes.iter().any(|p| p.id == second_id), "Second paste should have been evicted");
     }
-    
+
     #[test]
     fn hits_and_ticks_increment () {
         let mut paste_store = create_empty_store(5);
         let paste = create_test_paste();
 
-        paste_store.insert(format!("Paste {}", 0), paste.content, paste.mimetype).expect("Insert failed");
-        
+        paste_store.insert(paste.content, paste.mimetype).expect("Insert failed");
+
         let uuid = paste_store.pastes[0].id;
         paste_store.record_view(uuid).expect("Should have increment hits and ticks & return paste");
 
@@ -238,8 +236,8 @@ use super::*;
     fn max_paste_1 () {
         let mut paste_store = create_empty_store(1);
     
-        paste_store.insert(format!("Paste {}", 0), format!("Content {}", 0).into_bytes(), MimeKind::PlainText).expect("Insert failed");
-        paste_store.insert(format!("Paste {}", 1), format!("Content {}", 1).into_bytes(), MimeKind::PlainText).expect("Insert failed");
+        paste_store.insert(format!("Content {}", 0).into_bytes(), MimeKind::PlainText).expect("Insert failed");
+        paste_store.insert(format!("Content {}", 1).into_bytes(), MimeKind::PlainText).expect("Insert failed");
     
         assert_eq!(paste_store.pastes.len(), 1);
     }

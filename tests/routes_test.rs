@@ -33,7 +33,7 @@ async fn test_post_paste_json() {
         .method("POST")
         .uri("/paste/json")
         .header("content-type", "application/json")
-        .body(Body::from(r#"{"name":"Test Paste","content":"Hello, World!","mimetype":"PlainText"}"#))
+        .body(Body::from(r#"{"content":"Hello, World!","mimetype":"PlainText"}"#))
         .unwrap();
 
     let response = app
@@ -66,7 +66,7 @@ async fn test_post_paste_form() {
         .method("POST")
         .uri("/paste/form")
         .header("content-type", "application/x-www-form-urlencoded")
-        .body(Body::from(r#"name=Test Paste&content=Hello, World!&mimetype=PlainText"#))
+        .body(Body::from(r#"content=Hello, World!&mimetype=PlainText"#))
         .unwrap();
 
     let response = app
@@ -111,7 +111,7 @@ async fn test_bad_mimetype() {
         .method("POST")
         .uri("/paste/json")
         .header("content-type", "application/json")
-        .body(Body::from(r#"{"name":"Test Paste","content":"Hello, World!","mimetype":"InvalidMimeType"}"#))
+        .body(Body::from(r#"{"content":"Hello, World!","mimetype":"InvalidMimeType"}"#))
         .unwrap();
 
     let response = app
@@ -131,7 +131,7 @@ async fn test_payload_too_large() {
         .method("POST")
         .uri("/paste/json")
         .header("content-type", "application/json")
-        .body(Body::from(format!(r#"{{"name":"Test Paste","content":"{}","mimetype":"PlainText"}}"#, large_content)))
+        .body(Body::from(format!(r#"{{"content":"{}","mimetype":"PlainText"}}"#, large_content)))
         .unwrap();
 
     let response = app
@@ -150,7 +150,7 @@ async fn test_empty_content() {
         .method("POST")
         .uri("/paste/json")
         .header("content-type", "application/json")
-        .body(Body::from(r#"{"name":"Test Paste","content":"","mimetype":"PlainText"}"#))
+        .body(Body::from(r#"{"content":"","mimetype":"PlainText"}"#))
         .unwrap();
 
     let response = app
@@ -166,7 +166,7 @@ async fn test_get_paste_plain_text() {
     let (app, arc_paste_store) = create_state(5, 1_048_576);
 
     let mut paste_store = arc_paste_store.lock().unwrap();
-    let id = paste_store.insert("Test Paste".to_string(), b"Hello, World!".to_vec(), model::MimeKind::PlainText).expect("Insert failed");
+    let id = paste_store.insert(b"Hello, World!".to_vec(), model::MimeKind::PlainText).expect("Insert failed");
     drop(paste_store); // Necessary to release the lock before making the request
 
     let response = app
@@ -193,7 +193,7 @@ async fn test_get_paste_html() {
     let (app, arc_paste_store) = create_state(5, 1_048_576);
 
     let mut paste_store = arc_paste_store.lock().unwrap();
-    let id = paste_store.insert("Test Paste".to_string(), b"<b>Hello, World!</b>".to_vec(), model::MimeKind::Html).expect("Insert failed");
+    let id = paste_store.insert(b"<b>Hello, World!</b>".to_vec(), model::MimeKind::Html).expect("Insert failed");
     drop(paste_store); // Necessary to release the lock before making the request
 
     let response = app
@@ -220,7 +220,7 @@ async fn test_get_paste_markdown() {
     let (app, arc_paste_store) = create_state(5, 1_048_576);
 
     let mut paste_store = arc_paste_store.lock().unwrap();
-    let id = paste_store.insert("Test Paste".to_string(), b"# Heading\n\nSome **bold** text.".to_vec(), model::MimeKind::Markdown).expect("Insert failed");
+    let id = paste_store.insert(b"# Heading\n\nSome **bold** text.".to_vec(), model::MimeKind::Markdown).expect("Insert failed");
     drop(paste_store); // Necessary to release the lock before making the request
 
     let response = app
@@ -250,7 +250,7 @@ async fn test_get_paste_octet_stream() {
     let binary_content = vec![0u8, 159, 146, 150, 1, 2, 3, 255];
 
     let mut paste_store = arc_paste_store.lock().unwrap();
-    let id = paste_store.insert("Test Paste".to_string(), binary_content.clone(), model::MimeKind::OctetStream).expect("Insert failed");
+    let id = paste_store.insert(binary_content.clone(), model::MimeKind::OctetStream).expect("Insert failed");
     drop(paste_store); // Necessary to release the lock before making the request
 
     let response = app

@@ -29,7 +29,7 @@
 
         .page {
             width: 100%;
-            max-width: 900px;
+            max-width: 480px;
         }
 
         h1 {
@@ -38,19 +38,11 @@
             margin-bottom: 32px;
         }
 
-        .layout {
-            display: flex;
-            gap: 24px;
-            flex-wrap: wrap;
-            align-items: flex-start;
-        }
-
         .panel {
             background: var(--panel);
             border: 1px solid var(--border);
             border-radius: 10px;
             padding: 20px;
-            flex: 1 1 320px;
         }
 
         .panel h3 {
@@ -100,49 +92,6 @@
             background: var(--accent-hover);
         }
 
-        ul#paste-list {
-            list-style: none;
-            margin: 0;
-            padding: 0;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            max-height: 360px;
-            overflow-y: auto;
-        }
-
-        .paste-item a {
-            display: flex;
-            justify-content: space-between;
-            gap: 12px;
-            padding: 10px 12px;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            text-decoration: none;
-            color: var(--text);
-        }
-
-        .paste-item a:hover {
-            border-color: var(--accent);
-        }
-
-        .paste-name {
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .paste-hits {
-            color: var(--muted);
-            font-size: 0.85rem;
-            flex-shrink: 0;
-        }
-
-        .paste-empty {
-            color: var(--muted);
-            font-size: 0.9rem;
-        }
-
         .form-error {
             display: none;
             margin: 14px 0 0;
@@ -167,41 +116,28 @@
     <div class="page">
         <h1>Pastebin by Onre</h1>
 
-        <div class="layout">
-            <div class="panel">
-                <h3>Submit a Paste</h3>
-                <form id="paste-form">
-                    <label for="name">Name</label>
-                    <input type="text" id="name" required>
+        <div class="panel">
+            <h3>Submit a Paste</h3>
+            <form id="paste-form">
+                <label for="content">Content</label>
+                <textarea id="content" placeholder="Content" required></textarea>
 
-                    <label for="content">Content</label>
-                    <textarea id="content" placeholder="Content" required></textarea>
+                <label for="mimetype">MIME Type</label>
+                <select id="mimetype">
+                    <option value="PlainText">Plain Text</option>
+                    <option value="Html">HTML</option>
+                    <option value="Markdown">Markdown</option>
+                    <option value="OctetStream">Octet Stream</option>
+                </select>
 
-                    <label for="mimetype">MIME Type</label>
-                    <select id="mimetype">
-                        <option value="PlainText">Plain Text</option>
-                        <option value="Html">HTML</option>
-                        <option value="Markdown">Markdown</option>
-                        <option value="OctetStream">Octet Stream</option>
-                    </select>
+                <p id="form-error" class="form-error"></p>
 
-                    <p id="form-error" class="form-error"></p>
-
-                    <button id="submit">Submit</button>
-                </form>
-            </div>
-
-            <div class="panel">
-                <h3>Pastes</h3>
-                <ul id="paste-list">
-                    {{PASTE_LIST}}
-                </ul>
-            </div>
+                <button id="submit">Submit</button>
+            </form>
         </div>
     </div>
 
     <script>
-        const nameInput = document.getElementById('name');
         const contentInput = document.getElementById('content');
         const formError = document.getElementById('form-error');
 
@@ -215,22 +151,12 @@
             formError.classList.remove('visible');
         }
 
-        function validateForm(nameValue, contentValue) {
-            nameInput.classList.remove('invalid');
+        function validateForm(contentValue) {
             contentInput.classList.remove('invalid');
 
-            const missing = [];
-            if (nameValue.trim() === '') {
-                nameInput.classList.add('invalid');
-                missing.push('Name');
-            }
             if (contentValue.trim() === '') {
                 contentInput.classList.add('invalid');
-                missing.push('Content');
-            }
-
-            if (missing.length > 0) {
-                showFormError(`${missing.join(' and ')} must not be empty.`);
+                showFormError('Content must not be empty.');
                 return false;
             }
 
@@ -240,11 +166,10 @@
 
         document.getElementById('submit').addEventListener('click', async (event) => {
             event.preventDefault();
-            const nameValue = nameInput.value;
             const contentValue = contentInput.value;
             const mimetypeValue = document.getElementById('mimetype').value;
 
-            if (!validateForm(nameValue, contentValue)) {
+            if (!validateForm(contentValue)) {
                 return;
             }
 
@@ -253,7 +178,7 @@
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ "name": nameValue, "content": contentValue, "mimetype": mimetypeValue }),
+                body: JSON.stringify({ "content": contentValue, "mimetype": mimetypeValue }),
             });
 
             if (response.ok) {

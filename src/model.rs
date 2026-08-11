@@ -5,7 +5,6 @@ use axum::{response::{IntoResponse, Response}, http::StatusCode};
 #[derive(Serialize, Debug, Clone)]
 pub struct Paste {
     pub id: Uuid,
-    pub name: String,
     pub content: Vec<u8>,
     pub mimetype: MimeKind,
     pub hits: u32,
@@ -13,7 +12,7 @@ pub struct Paste {
 }
 
 impl Paste {
-    pub fn new (name: String, content: Vec<u8>, mimetype: MimeKind, last_seen_tick: u64, max_paste_size: usize) -> Result<Self, AppError> {
+    pub fn new (content: Vec<u8>, mimetype: MimeKind, last_seen_tick: u64, max_paste_size: usize) -> Result<Self, AppError> {
         if content.len() > max_paste_size {
             return Err(AppError::PayloadTooLarge);
         }
@@ -22,13 +21,8 @@ impl Paste {
             return Err(AppError::BadRequest(String::from("Content cannot be empty")));
         }
 
-        if name.trim().is_empty() {
-            return Err(AppError::BadRequest(String::from("Name cannot be empty")));
-        }
-
         Ok(Self {
             id: Uuid::new_v4(),
-            name,
             content,
             mimetype,
             hits: 0,
@@ -63,9 +57,7 @@ pub enum MimeKind {
 #[derive(Debug)]
 pub enum AppError {
     NotFound,
-    //InvalidMimeType,
     PayloadTooLarge,
-    //LockPoisoned,
     BadRequest (String),
     MarkdownParserFailed,
     MermaidRenderError(RenderError),
@@ -78,15 +70,9 @@ impl IntoResponse for AppError {
             AppError::NotFound => {
                 (StatusCode::NOT_FOUND, "Paste not found").into_response()
             }
-            // AppError::InvalidMimeType => {
-            //     (StatusCode::BAD_REQUEST, "Invalid mimetype").into_response()
-            // }
             AppError::PayloadTooLarge => {
                 (StatusCode::PAYLOAD_TOO_LARGE, "Payload too large").into_response()
             }
-            // AppError::LockPoisoned => {
-            //     (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
-            // }
             AppError::BadRequest(e) => {
                 (StatusCode::BAD_REQUEST, format!("{}", e)).into_response()
             }
