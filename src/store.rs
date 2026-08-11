@@ -66,14 +66,14 @@ impl PasteStore {
         self.pastes.len() >= self.max_pastes
     }
 
-    pub fn find_last_seen_paste(&self, pastes: &Vec<Paste>, indexes_to_skip : &Vec<usize>) -> Option<usize> {
+    pub fn find_last_seen_paste(&self, pastes: &Vec<Paste>, skip_mask : &Vec<bool>) -> Option<usize> {
         let mut i = 0;
 
-        // Initialize last_seen_paste_index to the first index that is not in indexes_to_skip
+        // Initialize last_seen_paste_index to the first index that is not skipped
         let mut last_seen_paste_index = {
             let mut f = 0;
             loop {
-                if !indexes_to_skip.iter().any(|x| *x == f) {
+                if !skip_mask[f] {
                     break f;
                 }
 
@@ -85,12 +85,8 @@ impl PasteStore {
             }
         };
 
-
-        for p in pastes {
-            
-            let skip = indexes_to_skip.iter().any(|x| *x == i);
-            
-            if !skip && p.last_seen_tick <= pastes[last_seen_paste_index].last_seen_tick {
+        for p in pastes {            
+            if !skip_mask[i] && p.last_seen_tick <= pastes[last_seen_paste_index].last_seen_tick {
                 last_seen_paste_index = i;
             }
             i += 1;
@@ -103,10 +99,10 @@ impl PasteStore {
             return Err(AppError::NotFound);
         }
         
-        let mut indexes_to_skip: Vec<usize> = Vec::new();
-        
+        let mut skip_mask = vec![false; self.pastes.len()];
+        let mut i = 0;
         loop {
-            let last_seen_paste_index = self.find_last_seen_paste(&self.pastes, &indexes_to_skip).ok_or(AppError::FullCapacityEvictionFailed)?;
+            let last_seen_paste_index = self.find_last_seen_paste(&self.pastes, &skip_mask).ok_or(AppError::FullCapacityEvictionFailed)?;
             let last_paste = &mut self.pastes[last_seen_paste_index];
             last_paste.decrement_hits();
 
@@ -115,10 +111,12 @@ impl PasteStore {
                 break Ok(true)
             }
             else {
-                indexes_to_skip.push(last_seen_paste_index);
+                skip_mask[last_seen_paste_index] = true;
+                i += 1;
 
-                if indexes_to_skip.len() >= self.pastes.len() {
-                    indexes_to_skip.clear();
+                if i >= self.pastes.len() {
+                    skip_mask = vec![false; self.pastes.len()];
+                    i = 0;
                 }
             }
         }
@@ -229,7 +227,8 @@ use super::*;
             create_test_paste(),
         ];
 
-        let index = paste_store.find_last_seen_paste(&pastes, &Vec::new()).expect("Should have found a last seen paste");
+        let skip_mask = vec![false; pastes.len()];
+        let index = paste_store.find_last_seen_paste(&pastes, &skip_mask).expect("Should have found a last seen paste");
     
         println!("Index 0 tick: {}, Index 1 tick: {}", pastes[0].last_seen_tick, pastes[1].last_seen_tick);
         assert_eq!(index, 2, "Should have returned the last index when all ticks are the same");

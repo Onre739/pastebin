@@ -210,49 +210,49 @@ use super::*;
         assert!(html.contains("<svg ") && html.contains("</svg>"), "Mermaid SVG not found in HTML output");
     }
 
-    // #[tokio::test]
-    // async fn plain_text() {
-    //     let paste = Paste {
-    //         id: Uuid::new_v4(),
-    //         name: "Test Plain Text".to_string(),
-    //         content: b"Hello, World!".to_vec(),
-    //         mimetype: MimeKind::PlainText,
-    //         hits: 0,
-    //         last_seen_tick: 0
-    //     };
+    #[tokio::test]
+    async fn plain_text() {
+        let paste = Paste {
+            id: Uuid::new_v4(),
+            name: "Test Plain Text".to_string(),
+            content: b"Hello, World!".to_vec(),
+            mimetype: MimeKind::PlainText,
+            hits: 0,
+            last_seen_tick: 0
+        };
 
-    //     let style_store = StyleStore::new();
-    //     let response = render_paste_page(&paste, &style_store).expect("render_paste_page failed");
+        let style_store = StyleStore::new();
+        let response = render_paste_page(&paste, &style_store).expect("render_paste_page failed");
 
-    //     let content_type = response.headers().get(header::CONTENT_TYPE).expect("missing Content-Type").to_str().unwrap();
-    //     assert_eq!(content_type, "text/plain; charset=utf-8");
+        let content_type = response.headers().get(header::CONTENT_TYPE).expect("missing Content-Type").to_str().unwrap();
+        assert_eq!(content_type, "text/plain; charset=utf-8");
 
-    //     let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("failed to read body");
-    //     assert_eq!(body.as_ref(), paste.content.as_slice(), "PlainText body should pass through unchanged");
-    // }
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("failed to read body");
+        assert_eq!(body.as_ref(), paste.content.as_slice(), "PlainText body should pass through unchanged");
+    }
 
-    // #[tokio::test]
-    // async fn octet_stream() {
-    //     let paste = Paste {
-    //         id: Uuid::new_v4(),
-    //         name: "Test Octet Stream".to_string(),
-    //         content: vec![0u8, 159, 146, 150, 1, 2, 3, 255],
-    //         mimetype: MimeKind::OctetStream,
-    //         hits: 0,
-    //         last_seen_tick: 0
-    //     };
+    #[tokio::test]
+    async fn octet_stream() {
+        let paste = Paste {
+            id: Uuid::new_v4(),
+            name: "Test Octet Stream".to_string(),
+            content: vec![0u8, 159, 146, 150, 1, 2, 3, 255],
+            mimetype: MimeKind::OctetStream,
+            hits: 0,
+            last_seen_tick: 0
+        };
 
-    //     let style_store = StyleStore::new();
-    //     let response = render_paste_page(&paste, &style_store).expect("render_paste_page failed");
+        let style_store = StyleStore::new();
+        let response = render_paste_page(&paste, &style_store).expect("render_paste_page failed");
 
-    //     let content_type = response.headers().get(header::CONTENT_TYPE).expect("missing Content-Type").to_str().unwrap();
-    //     assert_eq!(content_type, "application/octet-stream");
+        let content_type = response.headers().get(header::CONTENT_TYPE).expect("missing Content-Type").to_str().unwrap();
+        assert_eq!(content_type, "application/octet-stream");
 
-    //     let content_disposition = response.headers().get(header::CONTENT_DISPOSITION).expect("missing Content-Disposition").to_str().unwrap();
-    //     assert!(content_disposition.contains("attachment"), "Content-Disposition should mark the response as an attachment");
-    //     assert!(content_disposition.contains(&paste.id.to_string()), "Content-Disposition filename should contain the paste id");
+        let content_disposition = response.headers().get(header::CONTENT_DISPOSITION).expect("missing Content-Disposition").to_str().unwrap();
+        assert!(content_disposition.contains("attachment"), "Content-Disposition should mark the response as an attachment");
+        assert!(content_disposition.contains(&paste.id.to_string()), "Content-Disposition filename should contain the paste id");
 
-    //     let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("failed to read body");
-    //     assert_eq!(body.as_ref(), paste.content.as_slice(), "OctetStream body should pass through unchanged");
-    // }
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("failed to read body");
+        assert_eq!(body.as_ref(), paste.content.as_slice(), "OctetStream body should pass through unchanged");
+    }
 }
