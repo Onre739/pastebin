@@ -1,6 +1,63 @@
 # Pastebin by Onre
-Classic pastebin app
 
-## Configuration
-+ Config in .env
-- PORT, URL, MAX_PASTES
+In-memory pastebin server napsaný v Rustu (axum + tokio). Pasty se ukládají výhradně v paměti procesu (žádná databáze, žádná perzistence na disk) a při dosažení kapacity se nejstarší nepoužívané pasty automaticky uvolňují vlastním countdown LRU mechanismem nad `Vec`.
+
+Podrobný popis požadavků a architektury:
+- [`docs/requirements.md`](docs/requirements.md) — doménový slovník, funkční a nefunkční požadavky, akceptační kritéria
+- [`docs/architecture.md`](docs/architecture.md) — C4 diagramy, vlastnictví stavu, aplikace návrhových vzorů
+- [`docs/adr/`](docs/adr/) — jednotlivá architektonická rozhodnutí
+
+## Funkce
+
+- Vytvoření pastu přes JSON (`POST /paste/json`) nebo form-urlencoded (`POST /paste/form`)
+- Zobrazení pastu podle UUID (`GET /paste/{uuid}`), 404 pro neexistující/evikovaný paste
+- Renderování podle typu obsahu (`PlainText`, `Html`, `Markdown`, `OctetStream`)
+- Markdown → HTML (`pulldown-cmark`), zvýraznění syntaxe v blocích kódu (`syntect`), bloky ```mermaid``` renderované na SVG (`mermaid-svg`)
+- Countdown LRU evikce při naplnění kapacity
+- Validace vstupu (prázdný obsah, příliš velký payload, neplatný mimetype)
+
+## Spuštění
+
+```
+cargo run
+```
+
+Server naslouchá na adrese a portu z `.env` (výchozí `http://127.0.0.1:3000`).
+
+## Konfigurace
+
+Konfigurace se čte z `.env` v kořeni projektu při startu — všechny proměnné jsou povinné, jejich chybějící hodnota nebo neplatný formát způsobí pád aplikace hned při startu s chybovou hláškou.
+
+| Proměnná | Význam | Aktuální hodnota |
+|---|---|---|
+| `URL` | Adresa, na které server naslouchá | `127.0.0.1` |
+| `PORT` | Port, na kterém server naslouchá | `3000` |
+| `MAX_PASTES` | Maximální počet pastů držených současně; po dosažení limitu se spustí countdown LRU evikce | `100` |
+| `MAX_PASTE_SIZE` | Maximální velikost obsahu jednoho pastu v bajtech | `1048576` (1 MiB) |
+
+## Testování
+
+```
+cargo test
+```
+
+Spustí unit testy (`src/store.rs`, `src/render.rs`) i integrační testy (`tests/routes_test.rs`) — dohromady pokrývají hraniční případy LRU evikce, rendering všech typů obsahu a HTTP vrstvu včetně chybových stavů.
+
+## Struktura projektu
+
+```
+src/
+  main.rs     - spuštění serveru, načtení konfigurace, sestavení stavu
+  lib.rs      - deklarace veřejných modulů knihovny
+  routes.rs   - HTTP handlery a axum router
+  store.rs    - PasteStore (úložiště + countdown LRU), StyleStore, AppState
+  render.rs   - markdown/syntax highlighting/mermaid rendering, HTML šablony
+  model.rs    - Paste, MimeKind, AppError
+templates/    - statické HTML šablony (zakompilované přes include_str!)
+tests/        - integrační testy nad HTTP vrstvou
+docs/         - požadavky, architektura, ADR
+```
+
+## Omezení
+
+Úložiště je čistě v paměti — restart procesu znamená ztrátu všech pastů. Obsah typu `Html` se vrací beze změny, bez sanitizace. Žádná autentizace ani rate-limiting. Podrobnosti a zdůvodnění viz [`docs/requirements.md`](docs/requirements.md) a [`docs/architecture.md`](docs/architecture.md).
