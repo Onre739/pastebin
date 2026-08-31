@@ -2,6 +2,7 @@ use mermaid_svg::RenderError;
 use uuid::Uuid;
 use serde::{Serialize, Deserialize};
 use axum::{response::{IntoResponse, Response}, http::StatusCode};
+use schemars::JsonSchema;
 #[derive(Serialize, Debug, Clone)]
 pub struct Paste {
     pub id: Uuid,
@@ -46,7 +47,7 @@ impl Paste {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
 pub enum MimeKind {
     PlainText,
     Html,

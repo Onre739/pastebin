@@ -8,6 +8,8 @@ axum = "0.8.9"
 dotenvy = "0.15.7"
 mermaid-svg = "0.7.0"
 pulldown-cmark = "0.13.4"
+rmcp = { version = "3.1.4", features = ["server", "transport-streamable-http-server"] }
+schemars = "1.2.2"
 serde = { version = "1.0.228", features = ["derive"] }
 syntect = "5.3.0"
 tokio = { version = "1.52.3", features = ["full"] }

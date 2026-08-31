@@ -5,6 +5,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 use crate::{model::{AppError, MimeKind}, store::AppState};
 use crate::render;
+use crate::mcp::mcp_service;
 
 #[derive(Deserialize)]
 pub struct CreatePasteDto {
@@ -14,13 +15,16 @@ pub struct CreatePasteDto {
 
 pub fn create_router(state: AppState) -> Router {
     let max_paste_size = state.paste_store.lock().unwrap().max_paste_size;
-    
+    let mcp_service = mcp_service(state.clone());
+
     let app = Router::new()
         .route("/", get(get_home))
         .route("/paste/json", post(post_paste_json))
         .route("/paste/form", post(post_paste_form))
         .route("/paste/{uuid}", get(get_paste))
         .layer(DefaultBodyLimit::max(max_paste_size))
+        
+        .nest_service("/mcp", mcp_service)
         .with_state(state);
     app
 }
