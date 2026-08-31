@@ -16,6 +16,8 @@
 | **Limit velikosti (MAX_PASTE_SIZE)** | Maximální povolená velikost `content` jednoho pastu v bajtech. Konfigurováno přes `.env`, vynucováno na dvou různých místech (viz kapitola Otevřené otázky). |
 | **AppError** | Doménový chybový enum (`model::AppError`) implementující `IntoResponse`, mapující chyby na HTTP stavové kódy. |
 | **Render strategie** | Funkce `render::render_paste_page`, která podle `MimeKind` vybere způsob vykreslení odpovědi (strategy pattern, žádné trait objekty). |
+| **MCP server (PastebinMcp)** | Druhý protokolový adaptér nad stejnou doménou (`mcp::PastebinMcp`), vystavený na `POST /mcp` přes Streamable HTTP transport knihovny `rmcp`. Nesahá na `render.rs` — obsah pastů vrací jako surový text, ne vyrenderovaný HTML. |
+| **Nástroj (tool)** | Jednotka funkcionality, kterou MCP server nabízí klientovi k zavolání (`tools/call` v JSON-RPC). Aktuálně `create_paste` a `get_paste`, definované metodami s `#[tool]` na `PastebinMcp`. |
 
 ## 2. Funkční požadavky
 
@@ -35,6 +37,8 @@
 | FR-12 | Systém odmítne vytvoření pastu s prázdným `content` (`AppError::BadRequest`, `400`). |
 | FR-13 | Systém odmítne vytvoření pastu, jehož `content` přesahuje `max_paste_size` (`AppError::PayloadTooLarge`, `413`). |
 | FR-14 | Systém odmítne request s neplatnou hodnotou `mimetype` (nerozpoznaný enum variant) už na úrovni deserializace (axum/serde), bez zásahu do stavu úložiště. |
+| FR-15 | Systém vystaví MCP server na `POST /mcp` (Streamable HTTP transport, `rmcp`) s nástrojem `create_paste(content, mimetype)`, který vytvoří nový paste stejnou cestou jako FR-1/FR-2 (`PasteStore::insert`) a vrátí jeho UUID jako textový výsledek nástroje. |
+| FR-16 | MCP server nabízí nástroj `get_paste(id)`, který zobrazí paste podle UUID se stejným vedlejším efektem jako FR-5 (`PasteStore::record_view` — inkrementace `hits`, aktualizace `last_seen_tick`). Textový obsah (`PlainText`, `Html`, `Markdown`) se vrací surový, bez renderování; `OctetStream` obsah se popíše jen počtem bajtů, protože binární data nejdou vložit jako text. |
 
 ## 3. Nefunkční požadavky (NFR)
 
@@ -50,7 +54,9 @@
 | NFR-8 | Žádná autentizace, autorizace ani rate-limiting nad endpointy. | Kdokoli s přístupem k serveru může vytvářet i číst libovolné pasty, pokud zná/uhodne UUID. |
 | NFR-9 | `MimeKind::Html` pasty jsou bezpečnostně ekvivalentní neomezenému stored-XSS vektoru — kdokoli může vytvořit paste s libovolným JavaScriptem, který se spustí v kontextu domény serveru při zobrazení. | Přijatelné riziko pro cvičný/interní provoz, nevhodné pro veřejný provoz bez dalších opatření. |
 | NFR-10 | Formální SLA pro latenci (např. p50/p99) není měřeno ani testováno. | Otevřený bod — viz kapitola 6. |
-| NFR-11 | Automatizované pokrytí testy: 13 unit testů (`src/store.rs`, `src/render.rs`) + 11 integračních testů (`tests/routes_test.rs`) = 24 testů, spouštěných přes `cargo test`. | Pokrývají hraniční případy LRU (kapacita 1, prázdný store, remíza v ticku, vícekolová dekrementace), rendering (markdown, syntax highlighting, mermaid, plain/octet passthrough) a HTTP vrstvu (vytvoření, zobrazení pro všechny 4 mimetypy, 404, 413, 400, 422). |
+| NFR-11 | Automatizované pokrytí testy: 13 unit testů (`src/store.rs`, `src/render.rs`) + 11 integračních testů (`tests/routes_test.rs`) = 24 testů, spouštěných přes `cargo test`. | Pokrývají hraniční případy LRU (kapacita 1, prázdný store, remíza v ticku, vícekolová dekrementace), rendering (markdown, syntax highlighting, mermaid, plain/octet passthrough) a HTTP vrstvu (vytvoření, zobrazení pro všechny 4 mimetypy, 404, 413, 400, 422). Funkčnost MCP endpointu (FR-15, FR-16) je zatím ověřená jen manuálně (viz AC-12, AC-13), ne automatizovaným testem. |
+| NFR-12 | `POST /mcp` sdílí stejný `AppState`/`PasteStore` jako HTTP vrstva — žádný oddělený stav ani perzistence. Správa MCP session (`LocalSessionManager`) je taky čistě v paměti procesu, ztrácí se při restartu stejně jako pasty. | Rozšiřuje NFR-3 i na MCP vrstvu. |
+| NFR-13 | Na `POST /mcp` platí stejná absence autentizace/autorizace/rate-limitingu jako na HTTP endpointech. | Rozšiřuje NFR-8/NFR-9 — kdokoli s přístupem k `/mcp` může přes nástroj `create_paste` vytvořit paste typu `Html` se stejným XSS rizikem jako přes `POST /paste/json`. |
 
 ## 4. Akceptační kritéria
 
@@ -111,14 +117,26 @@ Given libovolný stav store,
 When klient pošle `POST /paste/json` s `"mimetype": "NeexistujiciTyp"`,
 Then odpověď má status `422` (chyba deserializace JSON tělesa na úrovni axum/serde, k `PasteStore` se request vůbec nedostane).
 
+**AC-12 — Vytvoření pastu přes MCP nástroj (FR-15)**
+Given inicializovaná MCP session na `POST /mcp` (po `initialize` handshake),
+When klient zavolá `tools/call` s `name: "create_paste"` a argumenty `{"content": "ahoj", "mimetype": "PlainText"}`,
+Then odpověď má `isError: false` a textový obsah je validní `Uuid`, který odpovídá pastu skutečně vloženému do `PasteStore` — ověřitelné i přes `GET /paste/{uuid}` na stejném UUID.
+
+**AC-13 — Zobrazení pastu přes MCP nástroj (FR-16)**
+Given existující paste vytvořený přes `create_paste` (nebo běžné HTTP endpointy),
+When klient zavolá `tools/call` s `name: "get_paste"` a `{"id": "<uuid>"}`,
+Then odpověď má `isError: false`, textový obsah ve tvaru `"[Mimetype] obsah"` a `hits`/`last_seen_tick` pastu se aktualizují stejně, jako by šlo o `GET /paste/{uuid}`. Neplatný formát UUID (`isError: true`, "Neplatné UUID: ...") i neexistující/evikovaný paste (`isError: true`, "NotFound") vrátí chybu v těle JSON-RPC odpovědi, ne pád serveru ani HTTP chybový status.
+
 ## 5. Hranice systému
 
 ```mermaid
 flowchart LR
     User["Uživatel<br/>(prohlížeč / HTTP klient)"]
+    McpClient["MCP klient<br/>(např. LLM agent)"]
 
     subgraph System["Pastebin server (jeden proces, axum + tokio)"]
         Routes["routes.rs<br/>HTTP handlery"]
+        Mcp["mcp.rs<br/>MCP server (rmcp), POST /mcp"]
         Store["store.rs<br/>PasteStore (Vec + LRU)"]
         Render["render.rs<br/>Markdown / syntax / mermaid"]
         Model["model.rs<br/>Paste, MimeKind, AppError"]
@@ -128,26 +146,31 @@ flowchart LR
     Env[".env<br/>PORT, URL, MAX_PASTES, MAX_PASTE_SIZE"]
 
     User -- "HTTP (GET/POST)" --> Routes
+    McpClient -- "MCP (JSON-RPC přes Streamable HTTP)" --> Mcp
     Routes --> Store
     Routes --> Render
+    Mcp --> Store
+    Mcp --> Model
     Store --> Model
     Render --> Model
     Render --> Templates
     Env -. "čteno jen při startu" .-> System
 ```
 
-**Uvnitř systému:** HTTP vrstva (routes.rs), doménová logika a úložiště (store.rs, model.rs), rendering (render.rs), statické HTML šablony zakompilované do binárky.
+**Uvnitř systému:** HTTP vrstva (routes.rs), MCP vrstva (mcp.rs) jako druhý protokolový adaptér nad stejnou doménou, doménová logika a úložiště (store.rs, model.rs), rendering (render.rs, používá jen `routes.rs`, ne `mcp.rs`), statické HTML šablony zakompilované do binárky.
 
 **Mimo systém / závislosti:**
 - `.env` soubor — čten jednorázově při startu (`main.rs`), za běhu se neobnovuje.
-- Žádná databáze, žádná externí síťová služba, žádné volání ven (rendering mermaidu i syntect probíhá čistě in-process, bez síťové komunikace).
+- Žádná databáze, žádná externí síťová služba, žádné volání ven (rendering mermaidu i syntect, i zpracování MCP protokolu, probíhá čistě in-process, bez síťové komunikace ven).
 - `syntect` načítá výchozí (vestavěné) sady syntaxí a motivů do paměti při vytvoření `StyleStore`, žádné externí soubory za běhu.
+- MCP klient (např. LLM agent) je externí aktér stejně jako uživatel v prohlížeči — komunikuje s tím samým procesem, jen jiným protokolem/endpointem.
 
 **Rozhraní systému:**
 - `GET /`
 - `POST /paste/json`
 - `POST /paste/form`
 - `GET /paste/{uuid}`
+- `POST /mcp` (Model Context Protocol, Streamable HTTP transport — JSON-RPC)
 
 ## 6. Otevřené otázky
 
@@ -157,3 +180,6 @@ flowchart LR
 4. **Neměřené NFR.** Guide vyžaduje měřitelná NFR pro latenci a propustnost (např. p99 < X ms při Y RPS). Taková čísla zatím nebyla naměřena ani formalizována jako testovatelný požadavek.
 5. **Zápis hits/ticku před úspěšným renderem.** `record_view` (store.rs) zapíše `hits`/`last_seen_tick` ještě před tím, než `render_paste_page` prokazatelně uspěje. Pokud rendering markdownu následně selže (`MarkdownParserFailed`, `MermaidRenderError`), počítadlo zobrazení se přesto zvýšilo. Je to žádoucí sémantika ("pokus o zobrazení" = "zobrazení"), nebo by měl zápis proběhnout až po úspěšném vyrenderování?
 6. **Nerealizované bonusové funkce ze zadání.** Endpoint pro smazání pastu a časová expirace nejsou implementovány.
+7. **MCP server se v `initialize` odpovědi hlásí jako `{"name":"rmcp","version":"3.1.4"}`.** Vlastní `get_info()` v `mcp.rs` nepředává `ServerInfo` explicitní jméno/verzi projektu (`Implementation::new("pastebin", ...)`), takže se v `serverInfo` propíše výchozí identifikace `rmcp` crate, ne tohoto projektu. Kosmetická nepřesnost, na funkčnost nemá vliv.
+8. **`get_paste` přes MCP vrací u `Markdown` surový zdroj, ne vyrenderované HTML** — záměrná odchylka od `GET /paste/{uuid}` (FR-6/FR-7), protože pro MCP/LLM klienta je čitelnější syrový text než HTML blob. Stálo by za úvahu, jestli časem nepřidat i variantu/parametr pro vyrenderovaný výstup, kdyby ho MCP klient chtěl.
+9. **MCP endpoint zatím nemá automatizované testy** (na rozdíl od HTTP vrstvy, viz NFR-11) — funkčnost byla ověřena jen manuálně přes reálné JSON-RPC requesty.

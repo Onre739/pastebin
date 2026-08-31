@@ -15,6 +15,15 @@ Podrobný popis požadavků a architektury:
 - Markdown → HTML (`pulldown-cmark`), zvýraznění syntaxe v blocích kódu (`syntect`), bloky ```mermaid``` renderované na SVG (`mermaid-svg`)
 - Countdown LRU evikce při naplnění kapacity
 - Validace vstupu (prázdný obsah, příliš velký payload, neplatný mimetype)
+- MCP server na `POST /mcp` (Streamable HTTP transport, `rmcp`) — stejná doména vystavená i přes Model Context Protocol pro MCP klienty (např. LLM agenty)
+
+## MCP rozhraní
+
+Server na `POST /mcp` vystavuje Model Context Protocol server (Streamable HTTP transport — jeden endpoint pro JSON-RPC i server-sent stream, bez samostatného SSE endpointu). Implementace je v `src/mcp.rs`, sdílí stejný `AppState`/`PasteStore` jako HTTP vrstva — paste vytvořený přes MCP je hned viditelný i přes `GET /paste/{uuid}` a naopak.
+
+Dostupné nástroje:
+- `create_paste(content, mimetype)` — vytvoří nový paste, vrátí jeho UUID (stejná validace jako `POST /paste/json`)
+- `get_paste(id)` — zobrazí paste podle UUID; má stejný vedlejší efekt jako běžné zobrazení (`hits`/`last_seen_tick` se aktualizují). Textový obsah se vrací surový (u `Markdown` tedy zdrojový text, ne vyrenderované HTML), binární (`OctetStream`) obsah se jen popíše velikostí.
 
 ## Spuštění
 
@@ -50,6 +59,7 @@ src/
   main.rs     - spuštění serveru, načtení konfigurace, sestavení stavu
   lib.rs      - deklarace veřejných modulů knihovny
   routes.rs   - HTTP handlery a axum router
+  mcp.rs      - MCP server (rmcp), nástroje create_paste/get_paste na POST /mcp
   store.rs    - PasteStore (úložiště + countdown LRU), StyleStore, AppState
   render.rs   - markdown/syntax highlighting/mermaid rendering, HTML šablony
   model.rs    - Paste, MimeKind, AppError
