@@ -6,6 +6,7 @@ use crate::model::{AppError, Paste, MimeKind};
 use crate::store::StyleStore;
 
 const HOME_TEMPLATE: &str = include_str!("../templates/home.html");
+const MARKDOWN_TEMPLATE: &str = include_str!("../templates/markdown.html");
 
 pub fn render_home_page() -> Result<Html<String>, AppError> {
     Ok(Html(HOME_TEMPLATE.to_string()))
@@ -29,9 +30,10 @@ pub fn render_paste_page(paste: &Paste, style_store: &StyleStore) -> Result<Resp
         MimeKind::Markdown => {
 
             let html_output = transform_md(&paste, &style_store)?;
+            let page = MARKDOWN_TEMPLATE.replace("{{CONTENT}}", &html_output);
 
-            ([(header::CONTENT_TYPE, "text/html; charset=utf-8")],    
-                Html(html_output)
+            ([(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+                Html(page)
             ).into_response()
         }
 
@@ -61,7 +63,7 @@ fn transform_md (paste: &Paste, style_store: &StyleStore) -> Result<String, AppE
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_TASKLISTS);
 
-    let theme = &style_store.theme_set.themes["Solarized (light)"];
+    let theme = &style_store.theme_set.themes["Solarized (dark)"];
 
     // 2. Parser
     let parser = Parser::new_ext(&md_string, options);
@@ -95,7 +97,8 @@ fn transform_md (paste: &Paste, style_store: &StyleStore) -> Result<String, AppE
                     in_mermaid = false;
                     
                     let html_content = render(&code_buffer).map_err(|e| AppError::MermaidRenderError(e))?;
-                    new_events.push(Event::Html(html_content.into()));
+                    let wrapped = format!(r#"<div class="mermaid-diagram">{}</div>"#, html_content);
+                    new_events.push(Event::Html(wrapped.into()));
                 }
                 else if in_code_block {
                     in_code_block = false;

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Pastebin by Onre</title>
+    <style>
+        :root {
+            --bg: #0f1115;
+            --panel: #171a21;
+            --border: #2a2e38;
+            --text: #e4e6eb;
+            --muted: #8a8f98;
+            --accent: #5b8cff;
+            --accent-hover: #7ba1ff;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+            display: flex;
+            justify-content: center;
+            padding: 40px 20px;
+        }
+
+        .page {
+            width: 100%;
+            max-width: 800px;
+        }
+
+        h1.site-title {
+            text-align: center;
+            font-size: 1.8rem;
+            margin-bottom: 32px;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px 28px;
+        }
+
+        .markdown-body h1, .markdown-body h2, .markdown-body h3,
+        .markdown-body h4, .markdown-body h5, .markdown-body h6 {
+            color: var(--text);
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 6px;
+            margin-top: 24px;
+        }
+
+        .markdown-body h1:first-child {
+            margin-top: 0;
+        }
+
+        .markdown-body p, .markdown-body li {
+            line-height: 1.6;
+        }
+
+        .markdown-body a {
+            color: var(--accent);
+        }
+
+        .markdown-body a:hover {
+            color: var(--accent-hover);
+        }
+
+        .markdown-body code {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 2px 5px;
+            font-family: "Consolas", monospace;
+            font-size: 0.9em;
+        }
+
+        .markdown-body pre code {
+            background: none;
+            border: none;
+            padding: 0;
+        }
+
+        .markdown-body pre {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px;
+            overflow-x: auto;
+        }
+
+        .markdown-body blockquote {
+            border-left: 3px solid var(--accent);
+            margin: 16px 0;
+            padding: 4px 16px;
+            color: var(--muted);
+        }
+
+        .markdown-body table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 16px 0;
+        }
+
+        .markdown-body th, .markdown-body td {
+            border: 1px solid var(--border);
+            padding: 8px 10px;
+            text-align: left;
+        }
+
+        .markdown-body th {
+            background: var(--bg);
+            color: var(--muted);
+        }
+
+        .markdown-body hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 24px 0;
+        }
+
+        .markdown-body img {
+            max-width: 100%;
+        }
+
+        .mermaid-diagram {
+            background: #fdf6e3;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <h1 class="site-title">Pastebin by Onre</h1>
+        <div class="panel markdown-body">
+            {{CONTENT}}
+        </div>
+    </div>
+</body>
+</html>
