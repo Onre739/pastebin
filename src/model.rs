@@ -13,8 +13,8 @@ pub struct Paste {
 }
 
 impl Paste {
-    pub fn new (content: Vec<u8>, mimetype: MimeKind, last_seen_tick: u64, max_paste_size: usize) -> Result<Self, AppError> {
-        if content.len() > max_paste_size {
+    pub fn new (content: Vec<u8>, mimetype: MimeKind, last_seen_tick: u64, max_content_size: usize) -> Result<Self, AppError> {
+        if content.len() > max_content_size {
             return Err(AppError::PayloadTooLarge);
         }
 

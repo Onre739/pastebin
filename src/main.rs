@@ -21,8 +21,13 @@ async fn main() {
         .parse()
         .expect("MAX_PASTE_SIZE must be valid number (usize)");
 
+    let max_file_size: usize = env::var("MAX_FILE_SIZE")
+        .expect("MAX_FILE_SIZE must be defined in .env!")
+        .parse()
+        .expect("MAX_FILE_SIZE must be valid number (usize)");
+
     // Create app state
-    let paste_store =  Arc::new(Mutex::new(store::PasteStore::new(max_pastes, max_paste_size)));
+    let paste_store =  Arc::new(Mutex::new(store::PasteStore::new(max_pastes, max_paste_size, max_file_size)));
     let style_store = Arc::new(store::StyleStore::new());
     let state = store::AppState{paste_store: paste_store, style_store: style_store};
 

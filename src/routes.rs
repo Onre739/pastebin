@@ -14,7 +14,12 @@ pub struct CreatePasteDto {
 }
 
 pub fn create_router(state: AppState) -> Router {
-    let max_paste_size = state.paste_store.lock().unwrap().max_paste_size;
+    let (max_paste_size, max_file_size) = {
+        let paste_store = state.paste_store.lock().unwrap();
+        (paste_store.max_paste_size, paste_store.max_file_size)
+    };
+    
+    let max_body_size = max_paste_size.max(max_file_size);
     let mcp_service = mcp_service(state.clone());
 
     let app = Router::new()
@@ -22,8 +27,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/paste/json", post(post_paste_json))
         .route("/paste/form", post(post_paste_form))
         .route("/paste/{uuid}", get(get_paste))
-        .layer(DefaultBodyLimit::max(max_paste_size))
-        
+        .layer(DefaultBodyLimit::max(max_body_size))
+
         .nest_service("/mcp", mcp_service)
         .with_state(state);
     app

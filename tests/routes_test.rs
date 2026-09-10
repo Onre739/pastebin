@@ -4,8 +4,8 @@ use std::{str, sync::{Arc, Mutex}};
 use uuid::Uuid;
 use pastebin::{model, routes::create_router, store::AppState, store::PasteStore, store::StyleStore};
 
-fn create_state(max_pastes: usize, max_paste_size: usize) -> (axum::Router, Arc<Mutex<PasteStore>>) {
-    let paste_store = Arc::new(Mutex::new(PasteStore::new(max_pastes, max_paste_size)));
+fn create_state(max_pastes: usize, max_paste_size: usize, max_file_size: usize) -> (axum::Router, Arc<Mutex<PasteStore>>) {
+    let paste_store = Arc::new(Mutex::new(PasteStore::new(max_pastes, max_paste_size, max_file_size)));
     let style_store = Arc::new(StyleStore::new());
 
     let state = AppState { paste_store: paste_store.clone(), style_store };
@@ -15,7 +15,7 @@ fn create_state(max_pastes: usize, max_paste_size: usize) -> (axum::Router, Arc<
 
 #[tokio::test]
 async fn test_get_home() {
-    let (app, _arc_paste_store) = create_state(5, 1_048_576);
+    let (app, _arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
 
     let response = app
         .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
@@ -27,7 +27,7 @@ async fn test_get_home() {
     
 #[tokio::test]
 async fn test_post_paste_json() {
-    let (app, arc_paste_store) = create_state(5, 1_048_576);
+    let (app, arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
 
     let request = Request::builder()
         .method("POST")
@@ -60,7 +60,7 @@ async fn test_post_paste_json() {
 
 #[tokio::test]
 async fn test_post_paste_form() {
-    let (app, arc_paste_store) = create_state(5, 1_048_576);
+    let (app, arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
 
     let request = Request::builder()
         .method("POST")
@@ -93,7 +93,7 @@ async fn test_post_paste_form() {
 
 #[tokio::test]
 async fn test_get_non_existent_paste() {
-    let (app, _arc_paste_store) = create_state(5, 1_048_576);
+    let (app, _arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
 
     let response = app
         .oneshot(Request::builder().uri("/paste/123e4567-e89b-12d3-a456-426614174000").body(Body::empty()).unwrap())
@@ -105,7 +105,7 @@ async fn test_get_non_existent_paste() {
 
 #[tokio::test]
 async fn test_bad_mimetype() {
-    let (app, _arc_paste_store) = create_state(5, 1_048_576);
+    let (app, _arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
 
     let request = Request::builder()
         .method("POST")
@@ -124,7 +124,7 @@ async fn test_bad_mimetype() {
 
 #[tokio::test]
 async fn test_payload_too_large() {
-    let (app, _arc_paste_store) = create_state(5, 1_048_576);
+    let (app, _arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
 
     let large_content = "A".repeat(2_000_000); // 2 MB content
     let request = Request::builder()
@@ -143,8 +143,44 @@ async fn test_payload_too_large() {
 }
 
 #[tokio::test]
+async fn test_octet_stream_allows_larger_payload_than_text() {
+    let (app, _arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
+
+    // 5 MB - over max_paste_size (1 MiB), well under max_file_size (20 MiB)
+    let large_content = "A".repeat(5_000_000);
+    let request = Request::builder()
+        .method("POST")
+        .uri("/paste/json")
+        .header("content-type", "application/json")
+        .body(Body::from(format!(r#"{{"content":"{}","mimetype":"OctetStream"}}"#, large_content)))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+
+    assert_eq!(response.status(), 200, "Expected 200 OK - OctetStream should allow content larger than max_paste_size");
+}
+
+#[tokio::test]
+async fn test_text_still_rejects_payload_over_paste_size_limit() {
+    let (app, _arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
+
+    // Same 5 MB size, but PlainText - should still be rejected by the smaller max_paste_size limit
+    let large_content = "A".repeat(5_000_000);
+    let request = Request::builder()
+        .method("POST")
+        .uri("/paste/json")
+        .header("content-type", "application/json")
+        .body(Body::from(format!(r#"{{"content":"{}","mimetype":"PlainText"}}"#, large_content)))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+
+    assert_eq!(response.status(), 413, "Expected 413 - PlainText should still be capped at max_paste_size, not max_file_size");
+}
+
+#[tokio::test]
 async fn test_empty_content() {
-    let (app, _arc_paste_store) = create_state(5, 1_048_576);
+    let (app, _arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
 
     let request = Request::builder()
         .method("POST")
@@ -163,7 +199,7 @@ async fn test_empty_content() {
 
 #[tokio::test]
 async fn test_get_paste_plain_text() {
-    let (app, arc_paste_store) = create_state(5, 1_048_576);
+    let (app, arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
 
     let mut paste_store = arc_paste_store.lock().unwrap();
     let id = paste_store.insert(b"Hello, World!".to_vec(), model::MimeKind::PlainText).expect("Insert failed");
@@ -190,7 +226,7 @@ async fn test_get_paste_plain_text() {
 
 #[tokio::test]
 async fn test_get_paste_html() {
-    let (app, arc_paste_store) = create_state(5, 1_048_576);
+    let (app, arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
 
     let mut paste_store = arc_paste_store.lock().unwrap();
     let id = paste_store.insert(b"<b>Hello, World!</b>".to_vec(), model::MimeKind::Html).expect("Insert failed");
@@ -217,7 +253,7 @@ async fn test_get_paste_html() {
 
 #[tokio::test]
 async fn test_get_paste_markdown() {
-    let (app, arc_paste_store) = create_state(5, 1_048_576);
+    let (app, arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
 
     let mut paste_store = arc_paste_store.lock().unwrap();
     let id = paste_store.insert(b"# Heading\n\nSome **bold** text.".to_vec(), model::MimeKind::Markdown).expect("Insert failed");
@@ -245,7 +281,7 @@ async fn test_get_paste_markdown() {
 
 #[tokio::test]
 async fn test_get_paste_octet_stream() {
-    let (app, arc_paste_store) = create_state(5, 1_048_576);
+    let (app, arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
 
     let binary_content = vec![0u8, 159, 146, 150, 1, 2, 3, 255];
 
