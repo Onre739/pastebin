@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 axum = "0.8.9"
+base64 = "0.22"
 dotenvy = "0.15.7"
 mermaid-svg = "0.7.0"
 pulldown-cmark = "0.13.4"

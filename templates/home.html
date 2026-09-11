@@ -140,7 +140,7 @@
                 <textarea id="content" placeholder="Content" required></textarea>
 
                 <input type="file" id="file-input" hidden>
-                <p class="form-hint" id="file-hint" hidden>Soubor se čte jako text (UTF-8) — skutečně binární soubory (obrázky, ZIP apod.) zatím nejsou plně podporované.</p>
+                <p class="form-hint" id="file-hint" hidden>The file is sent unchanged (binary) — images, ZIP, and other binary formats are supported. Maximum file size: {{MAX_FILE_SIZE_MB}} MB.</p>
 
                 <label for="mimetype">MIME Type</label>
                 <select id="mimetype">
@@ -225,17 +225,17 @@
                 return;
             }
 
-            const contentValue = isOctetStream()
-                ? await fileInput.files[0].text()
-                : contentInput.value;
-
-            const response = await fetch('/paste/json', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ "content": contentValue, "mimetype": mimetypeValue }),
-            });
+            const response = isOctetStream()
+                ? await fetch('/paste/binary', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/octet-stream' },
+                    body: fileInput.files[0],
+                })
+                : await fetch('/paste/json', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ "content": contentInput.value, "mimetype": mimetypeValue }),
+                });
 
             if (response.ok) {
                 const id = await response.json();

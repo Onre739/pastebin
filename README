@@ -10,11 +10,12 @@ Podrobný popis požadavků a architektury:
 ## Funkce
 
 - Vytvoření pastu přes JSON (`POST /paste/json`) nebo form-urlencoded (`POST /paste/form`)
+- Nahrání skutečně binárního souboru beze změny přes `POST /paste/binary` (syrové tělo requestu, žádná JSON/base64 obálka) — homepage pro `Octet Stream` mimetype nabízí místo textového pole výběr souboru
 - Zobrazení pastu podle UUID (`GET /paste/{uuid}`), 404 pro neexistující/evikovaný paste
 - Renderování podle typu obsahu (`PlainText`, `Html`, `Markdown`, `OctetStream`)
-- Markdown → HTML (`pulldown-cmark`), zvýraznění syntaxe v blocích kódu (`syntect`), bloky ```mermaid``` renderované na SVG (`mermaid-svg`)
+- Markdown → HTML (`pulldown-cmark`), zvýraznění syntaxe v blocích kódu (`syntect`, tmavé téma), bloky ```mermaid``` renderované na SVG (`mermaid-svg`) — výstup je obalený do stejné tmavé šablony jako homepage
 - Countdown LRU evikce při naplnění kapacity
-- Validace vstupu (prázdný obsah, příliš velký payload, neplatný mimetype)
+- Validace vstupu (prázdný obsah, příliš velký payload, neplatný mimetype) — textové pasty a binární soubory mají oddělený limit velikosti
 - MCP server na `POST /mcp` (Streamable HTTP transport, `rmcp`) — stejná doména vystavená i přes Model Context Protocol pro MCP klienty (např. LLM agenty)
 
 ## MCP rozhraní
@@ -22,8 +23,9 @@ Podrobný popis požadavků a architektury:
 Server na `POST /mcp` vystavuje Model Context Protocol server (Streamable HTTP transport — jeden endpoint pro JSON-RPC i server-sent stream, bez samostatného SSE endpointu). Implementace je v `src/mcp.rs`, sdílí stejný `AppState`/`PasteStore` jako HTTP vrstva — paste vytvořený přes MCP je hned viditelný i přes `GET /paste/{uuid}` a naopak.
 
 Dostupné nástroje:
-- `create_paste(content, mimetype)` — vytvoří nový paste, vrátí jeho UUID (stejná validace jako `POST /paste/json`)
-- `get_paste(id)` — zobrazí paste podle UUID; má stejný vedlejší efekt jako běžné zobrazení (`hits`/`last_seen_tick` se aktualizují). Textový obsah se vrací surový (u `Markdown` tedy zdrojový text, ne vyrenderované HTML), binární (`OctetStream`) obsah se jen popíše velikostí.
+- `create_paste(content, mimetype)` — vytvoří nový textový paste (`PlainText`/`Html`/`Markdown`), vrátí jeho UUID (stejná validace jako `POST /paste/json`)
+- `create_binary_paste(content_base64)` — vytvoří nový paste typu `OctetStream` z base64 zakódovaného obsahu; MCP obdoba `POST /paste/binary` — JSON-RPC neumí přenést syrové bajty, takže base64 je jediná cesta, jak binární data protlačit přes MCP tool call (stejný vzor používá i MCP specifikace pro binární content bloky)
+- `get_paste(id)` — zobrazí paste podle UUID; má stejný vedlejší efekt jako běžné zobrazení (`hits`/`last_seen_tick` se aktualizují). Textový obsah se vrací surový (u `Markdown` tedy zdrojový text, ne vyrenderované HTML), binární (`OctetStream`) obsah se jen popíše velikostí — čtení binárních dat zpátky přes MCP zatím není řešeno (viz `docs/requirements.md`, otevřené otázky)
 
 ## Spuštění
 
@@ -42,7 +44,8 @@ Konfigurace se čte z `.env` v kořeni projektu při startu — všechny proměn
 | `URL` | Adresa, na které server naslouchá | `127.0.0.1` |
 | `PORT` | Port, na kterém server naslouchá | `3000` |
 | `MAX_PASTES` | Maximální počet pastů držených současně; po dosažení limitu se spustí countdown LRU evikce | `100` |
-| `MAX_PASTE_SIZE` | Maximální velikost obsahu jednoho pastu v bajtech | `1048576` (1 MiB) |
+| `MAX_PASTE_SIZE` | Maximální velikost textového obsahu (`PlainText`, `Html`, `Markdown`) v bajtech | `1048576` (1 MiB) |
+| `MAX_FILE_SIZE` | Maximální velikost binárního souboru (`OctetStream`, nahrávaného přes `POST /paste/binary`) v bajtech | `20971520` (20 MiB) |
 
 ## Testování
 
@@ -50,7 +53,7 @@ Konfigurace se čte z `.env` v kořeni projektu při startu — všechny proměn
 cargo test
 ```
 
-Spustí unit testy (`src/store.rs`, `src/render.rs`) i integrační testy (`tests/routes_test.rs`) — dohromady pokrývají hraniční případy LRU evikce, rendering všech typů obsahu a HTTP vrstvu včetně chybových stavů.
+Spustí unit testy (`src/store.rs`, `src/render.rs`) i integrační testy (`tests/routes_test.rs`) — dohromady pokrývají hraniční případy LRU evikce, rendering všech typů obsahu, HTTP vrstvu včetně chybových stavů a oddělené limity velikosti pro text/binární obsah.
 
 ## Struktura projektu
 
@@ -64,6 +67,8 @@ src/
   render.rs   - markdown/syntax highlighting/mermaid rendering, HTML šablony
   model.rs    - Paste, MimeKind, AppError
 templates/    - statické HTML šablony (zakompilované přes include_str!)
+  home.html     - domovská stránka s formulářem (textové pole nebo výběr souboru)
+  markdown.html - stránka pro vyrenderovaný markdown, stejný vzhled jako home.html
 tests/        - integrační testy nad HTTP vrstvou
 docs/         - požadavky, architektura, ADR
 ```

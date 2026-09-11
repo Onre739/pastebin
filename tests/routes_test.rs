@@ -92,6 +92,102 @@ async fn test_post_paste_form() {
 }
 
 #[tokio::test]
+async fn test_post_paste_binary() {
+    let (app, arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
+
+    // Bytes, which are not valid UTF-8 - exactly what /paste/json cannot accept
+    let binary_content: Vec<u8> = vec![0u8, 159, 146, 150, 1, 2, 3, 255];
+    let request = Request::builder()
+        .method("POST")
+        .uri("/paste/binary")
+        .header("content-type", "application/octet-stream")
+        .body(Body::from(binary_content.clone()))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+
+    assert_eq!(response.status(), 200, "Expected 200 OK for binary paste creation");
+
+    let body = body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("failed to read response body");
+    let body_str = str::from_utf8(&body)
+        .expect("response body should be valid UTF-8");
+    let returned_id = Uuid::parse_str(body_str.trim_matches('"'))
+        .expect("response body should contain a valid UUID");
+
+    let paste_store = arc_paste_store.lock().unwrap();
+    let stored = paste_store.pastes.iter().find(|p| p.id == returned_id)
+        .expect("returned id should match a paste actually stored in PasteStore");
+    assert!(matches!(stored.mimetype, model::MimeKind::OctetStream), "paste created via /paste/binary should have mimetype OctetStream");
+    assert_eq!(stored.content, binary_content, "stored content should exactly match the raw request body, including non-UTF8 bytes");
+}
+
+#[tokio::test]
+async fn test_post_paste_binary_roundtrip_via_http() {
+    let (app, _arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
+
+    let binary_content: Vec<u8> = vec![0u8, 159, 146, 150, 1, 2, 3, 255];
+    let create_request = Request::builder()
+        .method("POST")
+        .uri("/paste/binary")
+        .header("content-type", "application/octet-stream")
+        .body(Body::from(binary_content.clone()))
+        .unwrap();
+
+    let create_response = app.clone().oneshot(create_request).await.unwrap();
+    assert_eq!(create_response.status(), 200);
+
+    let body = body::to_bytes(create_response.into_body(), usize::MAX).await.unwrap();
+    let id = Uuid::parse_str(str::from_utf8(&body).unwrap().trim_matches('"')).unwrap();
+
+    let get_response = app
+        .oneshot(Request::builder().uri(&format!("/paste/{}", id)).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(get_response.status(), 200);
+    let content_type = get_response.headers().get(header::CONTENT_TYPE).expect("missing Content-Type").to_str().unwrap();
+    assert_eq!(content_type, "application/octet-stream");
+
+    let downloaded = body::to_bytes(get_response.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(downloaded.as_ref(), binary_content.as_slice(), "downloaded content should exactly match what was uploaded via /paste/binary");
+}
+
+#[tokio::test]
+async fn test_post_paste_binary_empty() {
+    let (app, _arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/paste/binary")
+        .header("content-type", "application/octet-stream")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+
+    assert_eq!(response.status(), 400, "Expected 400 Bad Request for empty binary content");
+}
+
+#[tokio::test]
+async fn test_post_paste_binary_too_large() {
+    let (app, _arc_paste_store) = create_state(5, 1_048_576, 500);
+
+    let content = vec![7u8; 1000]; // nad max_file_size (500 B)
+    let request = Request::builder()
+        .method("POST")
+        .uri("/paste/binary")
+        .header("content-type", "application/octet-stream")
+        .body(Body::from(content))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+
+    assert_eq!(response.status(), 413, "Expected 413 Payload Too Large for binary content over max_file_size");
+}
+
+#[tokio::test]
 async fn test_get_non_existent_paste() {
     let (app, _arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
 

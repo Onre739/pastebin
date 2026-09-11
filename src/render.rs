@@ -8,8 +8,10 @@ use crate::store::StyleStore;
 const HOME_TEMPLATE: &str = include_str!("../templates/home.html");
 const MARKDOWN_TEMPLATE: &str = include_str!("../templates/markdown.html");
 
-pub fn render_home_page() -> Result<Html<String>, AppError> {
-    Ok(Html(HOME_TEMPLATE.to_string()))
+pub fn render_home_page(max_file_size: usize) -> Result<Html<String>, AppError> {
+    let max_file_size_mb = max_file_size / (1024 * 1024);
+    let page = HOME_TEMPLATE.replace("{{MAX_FILE_SIZE_MB}}", &max_file_size_mb.to_string());
+    Ok(Html(page))
 }
 
 pub fn render_paste_page(paste: &Paste, style_store: &StyleStore) -> Result<Response, AppError> {

@@ -22,3 +22,5 @@ Místo jednoho endpointu s dynamickým rozlišením existují dva oddělené: `P
 - Neodpovídá doslovně zadání, které počítá s jedním `POST /paste`. Veřejné API má tak dvě URL pro fakticky jednu operaci ("vytvořit paste"), což je nekonzistentní s `GET /paste/{uuid}`, který je jen jeden.
 - Klient musí předem vědět, na kterou z URL adres poslat request, podle formátu, který zvolil — s jedním endpointem by o tom rozhodovala jen hlavička `Content-Type`, kterou stejně posílá.
 - Sjednocení do jednoho `POST /paste` je možné bez zásahu do domény (`PasteStore::insert` by se nezměnilo) — jde čistě o změnu HTTP vrstvy (`routes.rs`), ale je to veřejné rozhraní, takže případná změna je breaking change pro existující klienty.
+
+**Dodatek:** k `/paste/json` a `/paste/form` později přibyl třetí endpoint, `POST /paste/binary` — ten ale neřeší stejný problém (content-negotiation JSON vs. form), řeší jiný (skutečně binární data, která se do žádného z obou formátů nevejdou). Zdůvodnění a důsledky viz [ADR 0007](./0007-dedicated-binary-endpoint.md).

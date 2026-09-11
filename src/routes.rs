@@ -1,5 +1,5 @@
 use axum::{
-    Json, Router, extract::{DefaultBodyLimit, Form, Path, State}, response::IntoResponse, routing::{get, post},
+    Json, Router, body::Bytes, extract::{DefaultBodyLimit, Form, Path, State}, response::IntoResponse, routing::{get, post},
 };
 use serde::Deserialize;
 use uuid::Uuid;
@@ -26,6 +26,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/", get(get_home))
         .route("/paste/json", post(post_paste_json))
         .route("/paste/form", post(post_paste_form))
+        .route ("/paste/binary", post(post_paste_binary))
         .route("/paste/{uuid}", get(get_paste))
         .layer(DefaultBodyLimit::max(max_body_size))
 
@@ -34,8 +35,9 @@ pub fn create_router(state: AppState) -> Router {
     app
 }
 
-async fn get_home() -> Result<impl IntoResponse, AppError> {
-    render::render_home_page()
+async fn get_home(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
+    let max_file_size = state.paste_store.lock().unwrap().max_file_size;
+    render::render_home_page(max_file_size)
 }
 
 async fn post_paste_json(State(state): State<AppState>, Json(payload): Json<CreatePasteDto>) 
@@ -50,6 +52,14 @@ async fn post_paste_form(State(state): State<AppState>, Form(form): Form<CreateP
 -> Result<impl IntoResponse, AppError> {
     let mut paste_store = state.paste_store.lock().unwrap();
     let id = paste_store.insert(form.content.into_bytes(), form.mimetype)?;
+
+    Ok(Json(id))
+}
+
+async fn post_paste_binary(State(state): State<AppState>, body: Bytes)
+-> Result<impl IntoResponse, AppError> {
+    let mut paste_store = state.paste_store.lock().unwrap();
+    let id = paste_store.insert(Vec::<u8>::from(body), MimeKind::OctetStream)?;
 
     Ok(Json(id))
 }

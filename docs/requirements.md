@@ -13,11 +13,12 @@
 | **Tick (generace)** | Monotónně rostoucí `u64` čítač v `PasteStore` (`current_tick`). Zvyšuje se jak při vytvoření pastu, tak při každém zobrazení; hodnota se zapisuje do `last_seen_tick` daného pastu. Slouží k určení, který paste byl naposledy "viděn" nejdéle. |
 | **Countdown LRU (decrement-LRU)** | Vlastní evikční algoritmus nad `Vec`: najde se paste s nejnižším `last_seen_tick` mezi zatím nevyřazenými kandidáty, jeho `hits` se sníží o 1; pokud klesnou na 0, paste se odstraní; pokud ne, kandidát se dočasně přeskočí (`skip_mask`) a hledá se další nejstarší, dokud se něco neuvolní. |
 | **Kapacita (MAX_PASTES)** | Maximální počet pastů, které smí `PasteStore` držet současně. Konfigurováno přes `.env`. |
-| **Limit velikosti (MAX_PASTE_SIZE)** | Maximální povolená velikost `content` jednoho pastu v bajtech. Konfigurováno přes `.env`, vynucováno na dvou různých místech (viz kapitola Otevřené otázky). |
+| **Limit velikosti textu (MAX_PASTE_SIZE)** | Maximální povolená velikost `content` pro textové mimetypy (`PlainText`, `Html`, `Markdown`) v bajtech. Konfigurováno přes `.env`. |
+| **Limit velikosti souboru (MAX_FILE_SIZE)** | Maximální povolená velikost `content` pro `OctetStream` v bajtech — samostatná, typicky větší hodnota než `MAX_PASTE_SIZE`, protože binární soubory (obrázky, archivy) běžně přesahují to, co je rozumné pro textový paste. `PasteStore::insert` vybírá platný limit podle `mimetype`. |
 | **AppError** | Doménový chybový enum (`model::AppError`) implementující `IntoResponse`, mapující chyby na HTTP stavové kódy. |
 | **Render strategie** | Funkce `render::render_paste_page`, která podle `MimeKind` vybere způsob vykreslení odpovědi (strategy pattern, žádné trait objekty). |
 | **MCP server (PastebinMcp)** | Druhý protokolový adaptér nad stejnou doménou (`mcp::PastebinMcp`), vystavený na `POST /mcp` přes Streamable HTTP transport knihovny `rmcp`. Nesahá na `render.rs` — obsah pastů vrací jako surový text, ne vyrenderovaný HTML. |
-| **Nástroj (tool)** | Jednotka funkcionality, kterou MCP server nabízí klientovi k zavolání (`tools/call` v JSON-RPC). Aktuálně `create_paste` a `get_paste`, definované metodami s `#[tool]` na `PastebinMcp`. |
+| **Nástroj (tool)** | Jednotka funkcionality, kterou MCP server nabízí klientovi k zavolání (`tools/call` v JSON-RPC). Aktuálně `create_paste`, `create_binary_paste` a `get_paste`, definované metodami s `#[tool]` na `PastebinMcp`. |
 
 ## 2. Funkční požadavky
 
@@ -31,21 +32,24 @@
 | FR-6 | Systém vykreslí obsah pastu podle `MimeKind`: `PlainText` → `text/plain` beze změny; `Html` → `text/html` beze změny (bez sanitizace); `Markdown` → převod na HTML; `OctetStream` → binární stažení s hlavičkou `Content-Disposition: attachment; filename="{uuid}.bin"`. |
 | FR-7 | Pro `Markdown` systém převede text na HTML pomocí `pulldown-cmark`, včetně základního formátování (nadpisy, tučné/kurzíva, seznamy, tabulky, přeškrtnutí, chytrá interpunkce, úkolové seznamy). |
 | FR-8 | Uvnitř markdownu systém rozpozná blok kódu s jazykem a obarví ho pomocí `syntect` (motiv "Solarized (light)", inline styly). |
-| FR-9 | Uvnitř markdownu systém rozpozná blok s jazykem `mermaid` a vyrenderuje ho na SVG pomocí `mermaid-svg`, vloženém přímo do výsledného HTML. |
-| FR-10 | Systém zobrazí na `GET /` statickou domovskou stránku s formulářem pro vytvoření pastu (textové pole obsahu, výběr `mimetype`); formulář odesílá JSON na `/paste/json`. |
+| FR-9 | Uvnitř markdownu systém rozpozná blok s jazykem `mermaid` a vyrenderuje ho na SVG pomocí `mermaid-svg`, vloženém přímo do výsledného HTML. Výsledný SVG se obalí do světlé karty (`.mermaid-diagram`), protože mermaid generuje tmavý text na průhledném pozadí, který by na tmavé stránce nebyl čitelný. |
+| FR-9a | Vyrenderovaný `Markdown` se obalí do stránkové šablony `templates/markdown.html` se stejnými CSS proměnnými (barvy, layout) jako `home.html` — konzistentní vzhled napříč aplikací. Blok kódu uvnitř markdownu se zvýrazní tmavým motivem `syntect` ("Solarized (dark)"), aby seděl na tmavé pozadí stránky. `PlainText`/`Html`/`OctetStream` touto šablonou neprochází (viz FR-6). |
+| FR-10 | Systém zobrazí na `GET /` statickou domovskou stránku s formulářem pro vytvoření pastu a výběrem `mimetype`. Pro `PlainText`/`Html`/`Markdown` nabízí textové pole; pro `OctetStream` textové pole skryje a nabídne výběr souboru (`<input type="file">`) místo něj. |
 | FR-11 | Pokud počet pastů v `PasteStore` dosáhne `max_pastes`, systém před vložením nového pastu provede countdown LRU evikci (viz doménový slovník), dokud se neuvolní alespoň jedno místo. |
-| FR-12 | Systém odmítne vytvoření pastu s prázdným `content` (`AppError::BadRequest`, `400`). |
-| FR-13 | Systém odmítne vytvoření pastu, jehož `content` přesahuje `max_paste_size` (`AppError::PayloadTooLarge`, `413`). |
+| FR-12 | Systém odmítne vytvoření pastu s prázdným `content` (`AppError::BadRequest`, `400`) — platí pro všechny mimetypy včetně `OctetStream`/prázdného souboru. |
+| FR-13 | Systém odmítne vytvoření pastu, jehož `content` přesahuje limit platný pro jeho `mimetype` (`AppError::PayloadTooLarge`, `413`) — `max_paste_size` pro `PlainText`/`Html`/`Markdown`, `max_file_size` pro `OctetStream` (viz FR-17). |
 | FR-14 | Systém odmítne request s neplatnou hodnotou `mimetype` (nerozpoznaný enum variant) už na úrovni deserializace (axum/serde), bez zásahu do stavu úložiště. |
-| FR-15 | Systém vystaví MCP server na `POST /mcp` (Streamable HTTP transport, `rmcp`) s nástrojem `create_paste(content, mimetype)`, který vytvoří nový paste stejnou cestou jako FR-1/FR-2 (`PasteStore::insert`) a vrátí jeho UUID jako textový výsledek nástroje. |
-| FR-16 | MCP server nabízí nástroj `get_paste(id)`, který zobrazí paste podle UUID se stejným vedlejším efektem jako FR-5 (`PasteStore::record_view` — inkrementace `hits`, aktualizace `last_seen_tick`). Textový obsah (`PlainText`, `Html`, `Markdown`) se vrací surový, bez renderování; `OctetStream` obsah se popíše jen počtem bajtů, protože binární data nejdou vložit jako text. |
+| FR-15 | Systém vystaví MCP server na `POST /mcp` (Streamable HTTP transport, `rmcp`) s nástrojem `create_paste(content, mimetype)`, který vytvoří nový textový paste (`PlainText`/`Html`/`Markdown`) stejnou cestou jako FR-1/FR-2 (`PasteStore::insert`) a vrátí jeho UUID jako textový výsledek nástroje. |
+| FR-16 | MCP server nabízí nástroj `get_paste(id)`, který zobrazí paste podle UUID se stejným vedlejším efektem jako FR-5 (`PasteStore::record_view` — inkrementace `hits`, aktualizace `last_seen_tick`). Textový obsah (`PlainText`, `Html`, `Markdown`) se vrací surový, bez renderování; `OctetStream` obsah se popíše jen počtem bajtů, protože binární data nejdou vložit jako text (viz FR-18 a otevřená otázka č. 10). |
+| FR-17 | Systém umožní vytvořit paste typu `OctetStream` odesláním syrových binárních dat jako těla requestu na `POST /paste/binary` (extraktor `axum::body::Bytes`, bez JSON/base64 obálky). Mimetype je pro tento endpoint vždy `OctetStream`, žádné další pole se neposílá. Na rozdíl od `POST /paste/json`/`POST /paste/form` (kde `content` musí být validní UTF-8 text, protože prochází `String`) tento endpoint podporuje libovolná binární data. |
+| FR-18 | MCP server nabízí nástroj `create_binary_paste(content_base64)`, který base64 dekóduje vstup a vytvoří paste typu `OctetStream` — MCP obdoba FR-17 pro protokol, kde argumenty nástroje jsou vždy JSON (a JSON string musí být validní Unicode text, nejde do něj vložit syrové bajty přímo). Nesprávný base64 vrátí `isError: true` s popisnou chybou, ne pád serveru. |
 
 ## 3. Nefunkční požadavky (NFR)
 
 | ID | Požadavek | Poznámka |
 |---|---|---|
 | NFR-1 | Kapacita úložiště je konfigurovatelná přes `MAX_PASTES` v `.env`; aktuální provozní hodnota je `100`. | Hodnota není zadrátovaná v kódu, čte se za běhu v `main.rs`. |
-| NFR-2 | Maximální velikost jednoho pastu je konfigurovatelná přes `MAX_PASTE_SIZE`; aktuální provozní hodnota je `1 048 576` B (1 MiB). | Viz Otevřené otázky — limit se v současné implementaci vynucuje na dvou různých místech s mírně odlišnou definicí "velikosti". |
+| NFR-2 | Maximální velikost textového pastu (`PlainText`/`Html`/`Markdown`) je konfigurovatelná přes `MAX_PASTE_SIZE`; aktuální provozní hodnota je `1 048 576` B (1 MiB). Maximální velikost binárního souboru (`OctetStream`) je konfigurovatelná samostatně přes `MAX_FILE_SIZE`; aktuální provozní hodnota je `20 971 520` B (20 MiB). `PasteStore::insert` vybírá platný limit podle `mimetype`. | Viz Otevřené otázky — u `POST /paste/json`/`POST /paste/form` se limit stále vynucuje na dvou různých místech s mírně odlišnou definicí "velikosti"; u `POST /paste/binary` (FR-17) tento nesoulad neplatí, protože tělo requestu je přímo obsah bez JSON/form obálky. |
 | NFR-3 | Úložiště je čistě v paměti (`Vec<Paste>` v `PasteStore`, chráněný `Arc<Mutex<...>>`); žádná perzistence na disk ani do databáze. Restart procesu znamená ztrátu všech pastů. | Záměrné rozhodnutí, ne nedodělek — odpovídá zadání ("no persistence required"). |
 | NFR-4 | Datová struktura pro úložiště smí být výhradně `Vec` — žádné `HashMap`, `BTreeMap`, `VecDeque`, `HashSet` ani prioritní fronta, a to i pro pomocné bookkeeping struktury uvnitř evikčního algoritmu (`skip_mask: Vec<bool>` místo množiny indexů). | Vyhledání pastu podle UUID je lineární, `O(n)`. |
 | NFR-5 | Souběžný přístup je řešen jediným `std::sync::Mutex` kolem `PasteStore`; `StyleStore` (syntect zdroje) je neměnný a sdílený bez zámku. | Zámek se drží jen po dobu čtení/zápisu do `Vec`, ne po dobu renderování (renderovací funkce už zámek nedrží). |
@@ -54,7 +58,7 @@
 | NFR-8 | Žádná autentizace, autorizace ani rate-limiting nad endpointy. | Kdokoli s přístupem k serveru může vytvářet i číst libovolné pasty, pokud zná/uhodne UUID. |
 | NFR-9 | `MimeKind::Html` pasty jsou bezpečnostně ekvivalentní neomezenému stored-XSS vektoru — kdokoli může vytvořit paste s libovolným JavaScriptem, který se spustí v kontextu domény serveru při zobrazení. | Přijatelné riziko pro cvičný/interní provoz, nevhodné pro veřejný provoz bez dalších opatření. |
 | NFR-10 | Formální SLA pro latenci (např. p50/p99) není měřeno ani testováno. | Otevřený bod — viz kapitola 6. |
-| NFR-11 | Automatizované pokrytí testy: 13 unit testů (`src/store.rs`, `src/render.rs`) + 11 integračních testů (`tests/routes_test.rs`) = 24 testů, spouštěných přes `cargo test`. | Pokrývají hraniční případy LRU (kapacita 1, prázdný store, remíza v ticku, vícekolová dekrementace), rendering (markdown, syntax highlighting, mermaid, plain/octet passthrough) a HTTP vrstvu (vytvoření, zobrazení pro všechny 4 mimetypy, 404, 413, 400, 422). Funkčnost MCP endpointu (FR-15, FR-16) je zatím ověřená jen manuálně (viz AC-12, AC-13), ne automatizovaným testem. |
+| NFR-11 | Automatizované pokrytí testy: 13 unit testů (`src/store.rs`, `src/render.rs`) + 17 integračních testů (`tests/routes_test.rs`) = 30 testů, spouštěných přes `cargo test`. | Pokrývají hraniční případy LRU (kapacita 1, prázdný store, remíza v ticku, vícekolová dekrementace), rendering (markdown, syntax highlighting, mermaid, plain/octet passthrough), HTTP vrstvu (vytvoření, zobrazení pro všechny 4 mimetypy, 404, 413, 400, 422) a `POST /paste/binary` včetně roundtripu s reálnými nevalidními-UTF8 bajty (FR-17). Funkčnost MCP endpointu (FR-15, FR-16) je zatím ověřená jen manuálně (viz AC-12, AC-13), ne automatizovaným testem. |
 | NFR-12 | `POST /mcp` sdílí stejný `AppState`/`PasteStore` jako HTTP vrstva — žádný oddělený stav ani perzistence. Správa MCP session (`LocalSessionManager`) je taky čistě v paměti procesu, ztrácí se při restartu stejně jako pasty. | Rozšiřuje NFR-3 i na MCP vrstvu. |
 | NFR-13 | Na `POST /mcp` platí stejná absence autentizace/autorizace/rate-limitingu jako na HTTP endpointech. | Rozšiřuje NFR-8/NFR-9 — kdokoli s přístupem k `/mcp` může přes nástroj `create_paste` vytvořit paste typu `Html` se stejným XSS rizikem jako přes `POST /paste/json`. |
 
@@ -107,15 +111,25 @@ Given libovolný stav store,
 When klient pošle `POST /paste/json` s `{"content": "", "mimetype": "PlainText"}`,
 Then odpověď má status `400` a paste se nevytvoří.
 
-**AC-10 — Příliš velký payload je odmítnut (FR-13)**
-Given `max_paste_size = 1 048 576` B,
-When klient pošle obsah, jehož dekódovaná velikost přesahuje limit,
-Then odpověď má status `413` a paste se nevytvoří.
+**AC-10 — Příliš velký payload je odmítnut podle mimetype (FR-13)**
+Given `max_paste_size = 1 048 576` B a `max_file_size = 20 971 520` B,
+When klient pošle `PlainText`/`Html`/`Markdown` obsah přesahující `max_paste_size` (ale menší než `max_file_size`),
+Then odpověď má status `413` a paste se nevytvoří — i když by stejně velký obsah jako `OctetStream` byl v pořádku.
 
 **AC-11 — Neplatný mimetype je odmítnut (FR-14)**
 Given libovolný stav store,
 When klient pošle `POST /paste/json` s `"mimetype": "NeexistujiciTyp"`,
 Then odpověď má status `422` (chyba deserializace JSON tělesa na úrovni axum/serde, k `PasteStore` se request vůbec nedostane).
+
+**AC-11a — Binární upload přes `/paste/binary` (FR-17)**
+Given libovolný stav store,
+When klient pošle `POST /paste/binary` s tělem obsahujícím bajty, které nejsou validní UTF-8 (např. `\x00\x9f\x92\x96\xff`),
+Then odpověď má status `200` a tělo obsahuje validní `Uuid`; následné `GET /paste/{uuid}` vrátí `Content-Type: application/octet-stream` a bajt-po-bajtu identický obsah, včetně bajtů, které by přes `POST /paste/json` selhaly na parsování JSON.
+
+**AC-11b — Prázdné/příliš velké binární tělo je odmítnuto (FR-12, FR-13, FR-17)**
+Given `max_file_size` nastavené na konkrétní hodnotu,
+When klient pošle na `POST /paste/binary` prázdné tělo, nebo tělo přesahující `max_file_size`,
+Then odpověď má status `400` (prázdné), resp. `413` (nad limitem) a paste se nevytvoří.
 
 **AC-12 — Vytvoření pastu přes MCP nástroj (FR-15)**
 Given inicializovaná MCP session na `POST /mcp` (po `initialize` handshake),
@@ -126,6 +140,11 @@ Then odpověď má `isError: false` a textový obsah je validní `Uuid`, který 
 Given existující paste vytvořený přes `create_paste` (nebo běžné HTTP endpointy),
 When klient zavolá `tools/call` s `name: "get_paste"` a `{"id": "<uuid>"}`,
 Then odpověď má `isError: false`, textový obsah ve tvaru `"[Mimetype] obsah"` a `hits`/`last_seen_tick` pastu se aktualizují stejně, jako by šlo o `GET /paste/{uuid}`. Neplatný formát UUID (`isError: true`, "Neplatné UUID: ...") i neexistující/evikovaný paste (`isError: true`, "NotFound") vrátí chybu v těle JSON-RPC odpovědi, ne pád serveru ani HTTP chybový status.
+
+**AC-14 — Vytvoření binárního pastu přes MCP nástroj (FR-18)**
+Given inicializovaná MCP session na `POST /mcp`,
+When klient zavolá `tools/call` s `name: "create_binary_paste"` a `{"content_base64": "<base64 kódování bajtů, které nejsou validní UTF-8>"}`,
+Then odpověď má `isError: false` a textový obsah je validní `Uuid`; následné `GET /paste/{uuid}` vrátí `Content-Type: application/octet-stream` a bajt-po-bajtu identický obsah jako před base64 zakódováním. Neplatný base64 string vrátí `isError: true` s popisnou chybou.
 
 ## 5. Hranice systému
 
@@ -143,7 +162,7 @@ flowchart LR
         Templates["templates/*.html<br/>zakompilované přes include_str!"]
     end
 
-    Env[".env<br/>PORT, URL, MAX_PASTES, MAX_PASTE_SIZE"]
+    Env[".env<br/>PORT, URL, MAX_PASTES,<br/>MAX_PASTE_SIZE, MAX_FILE_SIZE"]
 
     User -- "HTTP (GET/POST)" --> Routes
     McpClient -- "MCP (JSON-RPC přes Streamable HTTP)" --> Mcp
@@ -169,13 +188,14 @@ flowchart LR
 - `GET /`
 - `POST /paste/json`
 - `POST /paste/form`
+- `POST /paste/binary` (syrové binární tělo, bez JSON/form obálky — viz FR-17)
 - `GET /paste/{uuid}`
 - `POST /mcp` (Model Context Protocol, Streamable HTTP transport — JSON-RPC)
 
 ## 6. Otevřené otázky
 
-1. **Jeden vs. dva POST endpointy.** Zadání popisuje jediný `POST /paste`, který rozlišuje formát podle `Content-Type`. Aktuální implementace má dva oddělené endpointy (`/paste/json`, `/paste/form`). Sjednotit, nebo ponechat rozdělené?
-2. **Dva různé metry pro limit velikosti.** `DefaultBodyLimit::max(max_paste_size)` v `routes::create_router` měří syrové tělo HTTP requestu (včetně JSON/form obálky), zatímco `Paste::new` měří jen dekódovaný `content.len()`. Paste s obsahem přesně na hranici `MAX_PASTE_SIZE` může být odmítnut vrstvou `DefaultBodyLimit` (413 "length limit exceeded") dřív, než se dostane k aplikační validaci — efektivní limit je tak o něco nižší, než `MAX_PASTE_SIZE` deklaruje. Sjednotit obě kontroly na stejnou definici "velikosti", nebo `DefaultBodyLimit` nastavit s rezervou?
+1. **Jeden vs. tři POST endpointy.** Zadání popisuje jediný `POST /paste`, který rozlišuje formát podle `Content-Type`. Aktuální implementace má tři oddělené endpointy (`/paste/json`, `/paste/form`, `/paste/binary` — poslední přibyl kvůli FR-17, protože binární data nejdou vyjádřit jako JSON/form string). Sjednotit podle `Content-Type` do jednoho `POST /paste`, nebo ponechat rozdělené?
+2. **Dva různé metry pro limit velikosti — už jen u `POST /paste/json`/`POST /paste/form`.** `DefaultBodyLimit::max(max_paste_size.max(max_file_size))` v `routes::create_router` měří syrové tělo HTTP requestu (včetně JSON/form obálky), zatímco `Paste::new` měří jen dekódovaný `content.len()`. Paste s textovým obsahem přesně na hranici `MAX_PASTE_SIZE` může být odmítnut vrstvou `DefaultBodyLimit` dřív, než se dostane k aplikační validaci — efektivní limit je tak o něco nižší, než `MAX_PASTE_SIZE` deklaruje. U `POST /paste/binary` (FR-17) tento nesoulad neexistuje, protože tělo requestu je přímo obsah, žádná obálka navíc. Sjednotit kontroly u JSON/form endpointů na stejnou definici "velikosti", nebo nechat jak je?
 3. **Nepoužitá šablona.** `templates/paste.html` (s placeholdery `{{NAME}}`, `{{ID}}`, `{{CONTENT}}`) není nikde v kódu použita — `render_paste_page` u `Html`/`Markdown` vrací obsah přímo, bez obalení do stránkové šablony. Smazat soubor, nebo dopracovat jednotný vzhled i pro zobrazení pastu?
 4. **Neměřené NFR.** Guide vyžaduje měřitelná NFR pro latenci a propustnost (např. p99 < X ms při Y RPS). Taková čísla zatím nebyla naměřena ani formalizována jako testovatelný požadavek.
 5. **Zápis hits/ticku před úspěšným renderem.** `record_view` (store.rs) zapíše `hits`/`last_seen_tick` ještě před tím, než `render_paste_page` prokazatelně uspěje. Pokud rendering markdownu následně selže (`MarkdownParserFailed`, `MermaidRenderError`), počítadlo zobrazení se přesto zvýšilo. Je to žádoucí sémantika ("pokus o zobrazení" = "zobrazení"), nebo by měl zápis proběhnout až po úspěšném vyrenderování?
@@ -183,3 +203,4 @@ flowchart LR
 7. **MCP server se v `initialize` odpovědi hlásí jako `{"name":"rmcp","version":"3.1.4"}`.** Vlastní `get_info()` v `mcp.rs` nepředává `ServerInfo` explicitní jméno/verzi projektu (`Implementation::new("pastebin", ...)`), takže se v `serverInfo` propíše výchozí identifikace `rmcp` crate, ne tohoto projektu. Kosmetická nepřesnost, na funkčnost nemá vliv.
 8. **`get_paste` přes MCP vrací u `Markdown` surový zdroj, ne vyrenderované HTML** — záměrná odchylka od `GET /paste/{uuid}` (FR-6/FR-7), protože pro MCP/LLM klienta je čitelnější syrový text než HTML blob. Stálo by za úvahu, jestli časem nepřidat i variantu/parametr pro vyrenderovaný výstup, kdyby ho MCP klient chtěl.
 9. **MCP endpoint zatím nemá automatizované testy** (na rozdíl od HTTP vrstvy, viz NFR-11) — funkčnost byla ověřena jen manuálně přes reálné JSON-RPC requesty.
+10. **Zápis binárních dat přes MCP je řešen (FR-18), čtení ne — asymetrie.** `create_binary_paste` umí přijmout libovolná binární data (base64), ale `get_paste` u `OctetStream` obsahu stále jen vrátí počet bajtů, ne samotný obsah — MCP klient si binární paste nemůže přes `get_paste` stáhnout, musí sáhnout na `GET /paste/{uuid}` přes běžný HTTP klient mimo MCP. Symetrické řešení by bylo `get_paste` u `OctetStream` vracet obsah taky jako base64 (stejný vzor jako `image`/`blob` content bloky v samotné MCP specifikaci).
