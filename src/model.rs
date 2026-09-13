@@ -10,10 +10,11 @@ pub struct Paste {
     pub mimetype: MimeKind,
     pub hits: u32,
     pub last_seen_tick: u64,
+    pub file_name: Option<String>,
 }
 
 impl Paste {
-    pub fn new (content: Vec<u8>, mimetype: MimeKind, last_seen_tick: u64, max_content_size: usize) -> Result<Self, AppError> {
+    pub fn new (content: Vec<u8>, mimetype: MimeKind, last_seen_tick: u64, max_content_size: usize, file_name: Option<String>) -> Result<Self, AppError> {
         if content.len() > max_content_size {
             return Err(AppError::PayloadTooLarge);
         }
@@ -27,7 +28,8 @@ impl Paste {
             content,
             mimetype,
             hits: 0,
-            last_seen_tick
+            last_seen_tick,
+            file_name
         })
     }
 
@@ -44,6 +46,21 @@ impl Paste {
     pub fn update ( &mut self, tick: u64) {
         self.last_seen_tick = tick;
         self.increment_hits();
+    }
+}
+
+pub fn sanitize_file_name(name: &str) -> Option<String> {
+    let cleaned: String = name
+        .chars()
+        .filter(|c| !c.is_control() && *c != '"')
+        .take(255)
+        .collect();
+
+    let trimmed = cleaned.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
     }
 }
 

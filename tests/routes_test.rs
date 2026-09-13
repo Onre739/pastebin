@@ -1,5 +1,7 @@
 use tower::ServiceExt;
 use axum::{body, body::Body, http::{Request, header}};
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use std::{str, sync::{Arc, Mutex}};
 use uuid::Uuid;
 use pastebin::{model, routes::create_router, store::AppState, store::PasteStore, store::StyleStore};
@@ -298,7 +300,7 @@ async fn test_get_paste_plain_text() {
     let (app, arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
 
     let mut paste_store = arc_paste_store.lock().unwrap();
-    let id = paste_store.insert(b"Hello, World!".to_vec(), model::MimeKind::PlainText).expect("Insert failed");
+    let id = paste_store.insert(b"Hello, World!".to_vec(), model::MimeKind::PlainText, None).expect("Insert failed");
     drop(paste_store); // Necessary to release the lock before making the request
 
     let response = app
@@ -325,7 +327,7 @@ async fn test_get_paste_html() {
     let (app, arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
 
     let mut paste_store = arc_paste_store.lock().unwrap();
-    let id = paste_store.insert(b"<b>Hello, World!</b>".to_vec(), model::MimeKind::Html).expect("Insert failed");
+    let id = paste_store.insert(b"<b>Hello, World!</b>".to_vec(), model::MimeKind::Html, None).expect("Insert failed");
     drop(paste_store); // Necessary to release the lock before making the request
 
     let response = app
@@ -352,7 +354,7 @@ async fn test_get_paste_markdown() {
     let (app, arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
 
     let mut paste_store = arc_paste_store.lock().unwrap();
-    let id = paste_store.insert(b"# Heading\n\nSome **bold** text.".to_vec(), model::MimeKind::Markdown).expect("Insert failed");
+    let id = paste_store.insert(b"# Heading\n\nSome **bold** text.".to_vec(), model::MimeKind::Markdown, None).expect("Insert failed");
     drop(paste_store); // Necessary to release the lock before making the request
 
     let response = app
@@ -382,7 +384,7 @@ async fn test_get_paste_octet_stream() {
     let binary_content = vec![0u8, 159, 146, 150, 1, 2, 3, 255];
 
     let mut paste_store = arc_paste_store.lock().unwrap();
-    let id = paste_store.insert(binary_content.clone(), model::MimeKind::OctetStream).expect("Insert failed");
+    let id = paste_store.insert(binary_content.clone(), model::MimeKind::OctetStream, None).expect("Insert failed");
     drop(paste_store); // Necessary to release the lock before making the request
 
     let response = app
@@ -404,4 +406,83 @@ async fn test_get_paste_octet_stream() {
         .expect("failed to read response body");
 
     assert_eq!(body.as_ref(), binary_content.as_slice(), "Response body should contain the raw binary content unchanged");
+}
+
+#[tokio::test]
+async fn test_post_paste_binary_preserves_file_name() {
+    let (app, _arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
+
+    let binary_content: Vec<u8> = vec![1, 2, 3, 4];
+    let create_request = Request::builder()
+        .method("POST")
+        .uri("/paste/binary")
+        .header("content-type", "application/octet-stream")
+        .header("x-file-name-b64", BASE64.encode("photo.png"))
+        .body(Body::from(binary_content))
+        .unwrap();
+
+    let create_response = app.clone().oneshot(create_request).await.unwrap();
+    assert_eq!(create_response.status(), 200);
+
+    let body = body::to_bytes(create_response.into_body(), usize::MAX).await.unwrap();
+    let id = Uuid::parse_str(str::from_utf8(&body).unwrap().trim_matches('"')).unwrap();
+
+    let get_response = app
+        .oneshot(Request::builder().uri(&format!("/paste/{}", id)).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    let content_disposition = get_response.headers().get(header::CONTENT_DISPOSITION).expect("missing Content-Disposition").to_str().unwrap();
+    assert_eq!(content_disposition, "attachment; filename=\"photo.png\"", "Content-Disposition should use the file name from the X-File-Name-B64 header");
+}
+
+#[tokio::test]
+async fn test_post_paste_binary_without_file_name_falls_back_to_uuid() {
+    let (app, _arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
+
+    let binary_content: Vec<u8> = vec![1, 2, 3, 4];
+    let create_request = Request::builder()
+        .method("POST")
+        .uri("/paste/binary")
+        .header("content-type", "application/octet-stream")
+        .body(Body::from(binary_content))
+        .unwrap();
+
+    let create_response = app.clone().oneshot(create_request).await.unwrap();
+    let body = body::to_bytes(create_response.into_body(), usize::MAX).await.unwrap();
+    let id = Uuid::parse_str(str::from_utf8(&body).unwrap().trim_matches('"')).unwrap();
+
+    let get_response = app
+        .oneshot(Request::builder().uri(&format!("/paste/{}", id)).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    let content_disposition = get_response.headers().get(header::CONTENT_DISPOSITION).expect("missing Content-Disposition").to_str().unwrap();
+    assert_eq!(content_disposition, format!("attachment; filename=\"{}.bin\"", id), "Missing X-File-Name-B64 header should fall back to {{uuid}}.bin");
+}
+
+#[tokio::test]
+async fn test_post_paste_binary_sanitizes_file_name() {
+    let (app, _arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
+
+    let binary_content: Vec<u8> = vec![1, 2, 3, 4];
+    let create_request = Request::builder()
+        .method("POST")
+        .uri("/paste/binary")
+        .header("content-type", "application/octet-stream")
+        .header("x-file-name-b64", BASE64.encode("evil\".txt"))
+        .body(Body::from(binary_content))
+        .unwrap();
+
+    let create_response = app.clone().oneshot(create_request).await.unwrap();
+    let body = body::to_bytes(create_response.into_body(), usize::MAX).await.unwrap();
+    let id = Uuid::parse_str(str::from_utf8(&body).unwrap().trim_matches('"')).unwrap();
+
+    let get_response = app
+        .oneshot(Request::builder().uri(&format!("/paste/{}", id)).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    let content_disposition = get_response.headers().get(header::CONTENT_DISPOSITION).expect("missing Content-Disposition").to_str().unwrap();
+    assert_eq!(content_disposition, "attachment; filename=\"evil.txt\"", "Double quotes in the file name should be stripped so the header stays well-formed");
 }

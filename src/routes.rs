@@ -1,9 +1,13 @@
+use std::fmt::format;
+
 use axum::{
-    Json, Router, body::Bytes, extract::{DefaultBodyLimit, Form, Path, State}, response::IntoResponse, routing::{get, post},
+    Json, Router, body::Bytes, extract::{DefaultBodyLimit, Form, Path, State}, http::HeaderMap, response::IntoResponse, routing::{get, post},
 };
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use serde::Deserialize;
 use uuid::Uuid;
-use crate::{model::{AppError, MimeKind}, store::AppState};
+use crate::{model::{AppError, MimeKind, sanitize_file_name}, store::AppState};
 use crate::render;
 use crate::mcp::mcp_service;
 
@@ -43,7 +47,7 @@ async fn get_home(State(state): State<AppState>) -> Result<impl IntoResponse, Ap
 async fn post_paste_json(State(state): State<AppState>, Json(payload): Json<CreatePasteDto>) 
 -> Result<impl IntoResponse, AppError> {
     let mut paste_store = state.paste_store.lock().unwrap();
-    let id = paste_store.insert(payload.content.into_bytes(), payload.mimetype)?;
+    let id = paste_store.insert(payload.content.into_bytes(), payload.mimetype, None)?;
 
     Ok(Json(id))
 }
@@ -51,15 +55,26 @@ async fn post_paste_json(State(state): State<AppState>, Json(payload): Json<Crea
 async fn post_paste_form(State(state): State<AppState>, Form(form): Form<CreatePasteDto>)
 -> Result<impl IntoResponse, AppError> {
     let mut paste_store = state.paste_store.lock().unwrap();
-    let id = paste_store.insert(form.content.into_bytes(), form.mimetype)?;
+    let id = paste_store.insert(form.content.into_bytes(), form.mimetype, None)?;
 
     Ok(Json(id))
 }
 
-async fn post_paste_binary(State(state): State<AppState>, body: Bytes)
+async fn post_paste_binary(State(state): State<AppState>, headers: HeaderMap, body: Bytes)
 -> Result<impl IntoResponse, AppError> {
+    let file_name = headers.get("x-file-name-b64")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|b64| BASE64.decode(b64).ok())
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+        .and_then(|name| sanitize_file_name(&name));
+
+    // let raw = headers.get("x-file-name-b64").ok_or(AppError::BadRequest("Missing X-File-Name-B64 header".into()))?.to_str().map_err(|e| AppError::BadRequest(format!("Invalid X-File-Name-B64 header: {}", e)))?;
+    // let bytes = BASE64.decode(raw).map_err(|e| AppError::BadRequest(format!("Invalid X-File-Name-B64 content: {}", e)))?;
+    // let name = String::from_utf8_lossy(&bytes);
+    // let file_name = sanitize_file_name(&name);
+
     let mut paste_store = state.paste_store.lock().unwrap();
-    let id = paste_store.insert(Vec::<u8>::from(body), MimeKind::OctetStream)?;
+    let id = paste_store.insert(Vec::<u8>::from(body), MimeKind::OctetStream, file_name)?;
 
     Ok(Json(id))
 }

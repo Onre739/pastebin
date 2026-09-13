@@ -13,7 +13,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::model::MimeKind;
+use crate::model::{sanitize_file_name, MimeKind};
 use crate::store::AppState;
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -28,6 +28,8 @@ pub struct CreatePasteArgs {
 pub struct CreateBinaryPasteArgs {
     #[schemars(description = "paste content encoded as base64 - use this for arbitrary binary data (images, archives, etc.) that isn't valid UTF-8 text")]
     pub content_base64: String,
+    #[schemars(description = "original file name (e.g. \"photo.png\") used for the Content-Disposition header when the paste is downloaded - optional")]
+    pub file_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -53,7 +55,7 @@ impl PastebinMcp {
     fn create_paste(&self, Parameters(args): Parameters<CreatePasteArgs>) -> Result<String, String> {
         let mut paste_store = self.state.paste_store.lock().unwrap();
         paste_store
-            .insert(args.content.into_bytes(), args.mimetype)
+            .insert(args.content.into_bytes(), args.mimetype, None)
             .map(|id| id.to_string())
             .map_err(|e| format!("{:?}", e))
     }
@@ -63,9 +65,11 @@ impl PastebinMcp {
         let content = BASE64.decode(&args.content_base64)
             .map_err(|e| format!("Invalid base64 content: {e}"))?;
 
+        let file_name = args.file_name.as_deref().and_then(sanitize_file_name);
+
         let mut paste_store = self.state.paste_store.lock().unwrap();
         paste_store
-            .insert(content, MimeKind::OctetStream)
+            .insert(content, MimeKind::OctetStream, file_name)
             .map(|id| id.to_string())
             .map_err(|e| format!("{:?}", e))
     }

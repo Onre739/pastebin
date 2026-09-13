@@ -40,10 +40,11 @@ pub fn render_paste_page(paste: &Paste, style_store: &StyleStore) -> Result<Resp
         }
 
         MimeKind::OctetStream => {
+            let filename = paste.file_name.clone().unwrap_or_else(|| format!("{}.bin", paste.id));
             (
                 [
                     (header::CONTENT_TYPE, "application/octet-stream"),
-                    (header::CONTENT_DISPOSITION, &format!("attachment; filename=\"{}.bin\"", paste.id))
+                    (header::CONTENT_DISPOSITION, &format!("attachment; filename=\"{}\"", filename))
                 ], paste.content.clone()
             ).into_response()
         }
@@ -143,7 +144,8 @@ use super::*;
             content: b"# Heading\n\nThis is **bold** and *italic* text.\n\n- item one\n- item two\n".to_vec(),
             mimetype: MimeKind::Markdown,
             hits: 0,
-            last_seen_tick: 0
+            last_seen_tick: 0,
+            file_name: None,
         };
 
         let style_store = StyleStore::new();
@@ -162,7 +164,8 @@ use super::*;
             content: b"```rust\nlet a = \"hello world\";\n```".to_vec(),
             mimetype: MimeKind::Markdown,
             hits: 0,
-            last_seen_tick: 0
+            last_seen_tick: 0,
+            file_name: None,
         };
 
         let style_store = StyleStore::new();
@@ -179,7 +182,8 @@ use super::*;
             content: b"```mermaid\ngraph TD;\nA-->B;\nB-->C;\nC-->A;\n```".to_vec(),
             mimetype: MimeKind::Markdown,
             hits: 0,
-            last_seen_tick: 0
+            last_seen_tick: 0,
+            file_name: None,
         };
 
         let style_store = StyleStore::new();
@@ -195,7 +199,8 @@ use super::*;
             content: b"Hello, World!".to_vec(),
             mimetype: MimeKind::PlainText,
             hits: 0,
-            last_seen_tick: 0
+            last_seen_tick: 0,
+            file_name: None,
         };
 
         let style_store = StyleStore::new();
@@ -215,7 +220,8 @@ use super::*;
             content: vec![0u8, 159, 146, 150, 1, 2, 3, 255],
             mimetype: MimeKind::OctetStream,
             hits: 0,
-            last_seen_tick: 0
+            last_seen_tick: 0,
+            file_name: None,
         };
 
         let style_store = StyleStore::new();
@@ -230,5 +236,23 @@ use super::*;
 
         let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("failed to read body");
         assert_eq!(body.as_ref(), paste.content.as_slice(), "OctetStream body should pass through unchanged");
+    }
+
+    #[tokio::test]
+    async fn octet_stream_with_file_name() {
+        let paste = Paste {
+            id: Uuid::new_v4(),
+            content: vec![1, 2, 3, 4],
+            mimetype: MimeKind::OctetStream,
+            hits: 0,
+            last_seen_tick: 0,
+            file_name: Some("photo.png".to_string()),
+        };
+
+        let style_store = StyleStore::new();
+        let response = render_paste_page(&paste, &style_store).expect("render_paste_page failed");
+
+        let content_disposition = response.headers().get(header::CONTENT_DISPOSITION).expect("missing Content-Disposition").to_str().unwrap();
+        assert_eq!(content_disposition, "attachment; filename=\"photo.png\"", "Content-Disposition should use the original file name when present");
     }
 }

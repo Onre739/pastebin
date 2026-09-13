@@ -197,6 +197,15 @@
             formError.classList.remove('visible');
         }
 
+        // btoa() only accepts Latin1 - encode to UTF-8 bytes first so file
+        // names with non-ASCII characters (e.g. "obrázek.png") survive.
+        function fileNameToBase64(name) {
+            const utf8Bytes = new TextEncoder().encode(name);
+            let binary = '';
+            utf8Bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+            return btoa(binary);
+        }
+
         function validateForm() {
             contentInput.classList.remove('invalid');
             fileInput.classList.remove('invalid');
@@ -228,7 +237,10 @@
             const response = isOctetStream()
                 ? await fetch('/paste/binary', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/octet-stream' },
+                    headers: {
+                        'Content-Type': 'application/octet-stream',
+                        'X-File-Name-B64': fileNameToBase64(fileInput.files[0].name),
+                    },
                     body: fileInput.files[0],
                 })
                 : await fetch('/paste/json', {
