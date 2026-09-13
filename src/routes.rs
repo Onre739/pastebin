@@ -1,5 +1,3 @@
-use std::fmt::format;
-
 use axum::{
     Json, Router, body::Bytes, extract::{DefaultBodyLimit, Form, Path, State}, http::HeaderMap, response::IntoResponse, routing::{get, post},
 };
@@ -67,11 +65,6 @@ async fn post_paste_binary(State(state): State<AppState>, headers: HeaderMap, bo
         .and_then(|b64| BASE64.decode(b64).ok())
         .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
         .and_then(|name| sanitize_file_name(&name));
-
-    // let raw = headers.get("x-file-name-b64").ok_or(AppError::BadRequest("Missing X-File-Name-B64 header".into()))?.to_str().map_err(|e| AppError::BadRequest(format!("Invalid X-File-Name-B64 header: {}", e)))?;
-    // let bytes = BASE64.decode(raw).map_err(|e| AppError::BadRequest(format!("Invalid X-File-Name-B64 content: {}", e)))?;
-    // let name = String::from_utf8_lossy(&bytes);
-    // let file_name = sanitize_file_name(&name);
 
     let mut paste_store = state.paste_store.lock().unwrap();
     let id = paste_store.insert(Vec::<u8>::from(body), MimeKind::OctetStream, file_name)?;
