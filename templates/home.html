@@ -111,15 +111,37 @@
             border-color: #a33;
         }
 
-        input[type="file"] {
-            width: 100%;
-            background: var(--bg);
-            color: var(--text);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 8px 10px;
-            font-family: inherit;
+        .drop-zone {
+            margin-top: 6px;
+            padding: 36px 16px;
+            border: 2px dashed var(--border);
+            border-radius: 8px;
+            text-align: center;
+            color: var(--muted);
             font-size: 0.9rem;
+            cursor: pointer;
+            transition: border-color 0.15s, background 0.15s, color 0.15s;
+        }
+
+        .drop-zone:hover {
+            border-color: var(--accent-hover);
+            color: var(--text);
+        }
+
+        .drop-zone.drag-active {
+            border-color: var(--accent);
+            background: rgba(91, 140, 255, 0.1);
+            color: var(--text);
+        }
+
+        .drop-zone.invalid {
+            border-color: #a33;
+        }
+
+        .drop-zone .drop-zone-filename {
+            color: var(--text);
+            font-weight: 600;
+            word-break: break-all;
         }
 
         .form-hint {
@@ -168,7 +190,10 @@
                 <label for="content" id="content-label">Content</label>
                 <textarea id="content" placeholder="Content" required></textarea>
 
-                <input type="file" id="file-input" hidden>
+                <div class="drop-zone" id="drop-zone" hidden>
+                    <input type="file" id="file-input" hidden>
+                    <p id="drop-zone-text">Drag &amp; drop a file anywhere on this page, or click here to browse</p>
+                </div>
                 <p class="form-hint" id="file-hint" hidden>The file is sent unchanged (binary) — images, ZIP, and other binary formats are supported. Maximum file size: {{MAX_FILE_SIZE_MB}} MB.</p>
 
                 <label for="mimetype">MIME Type</label>
@@ -196,6 +221,8 @@
     <script>
         const contentInput = document.getElementById('content');
         const contentLabel = document.getElementById('content-label');
+        const dropZone = document.getElementById('drop-zone');
+        const dropZoneText = document.getElementById('drop-zone-text');
         const fileInput = document.getElementById('file-input');
         const fileHint = document.getElementById('file-hint');
         const mimetypeSelect = document.getElementById('mimetype');
@@ -215,12 +242,12 @@
             contentInput.hidden = octetStream;
             contentInput.required = !octetStream;
 
-            fileInput.hidden = !octetStream;
+            dropZone.hidden = !octetStream;
             fileHint.hidden = !octetStream;
 
             formError.classList.remove('visible');
             contentInput.classList.remove('invalid');
-            fileInput.classList.remove('invalid');
+            dropZone.classList.remove('invalid');
             successPanel.classList.remove('visible');
         }
 
@@ -246,13 +273,66 @@
             return btoa(binary);
         }
 
+        function updateDropZoneLabel() {
+            if (fileInput.files.length > 0) {
+                dropZoneText.innerHTML = `Selected: <span class="drop-zone-filename"></span>`;
+                dropZoneText.querySelector('.drop-zone-filename').textContent = fileInput.files[0].name;
+            } else {
+                dropZoneText.textContent = 'Drag & drop a file anywhere on this page, or click here to browse';
+            }
+        }
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', () => {
+            updateDropZoneLabel();
+            dropZone.classList.remove('invalid');
+            clearFormError();
+        });
+
+        let dragCounter = 0;
+
+        document.body.addEventListener('dragenter', (event) => {
+            event.preventDefault();
+            if (!isOctetStream()) return;
+            dragCounter++;
+            dropZone.classList.add('drag-active');
+        });
+
+        document.body.addEventListener('dragover', (event) => {
+            event.preventDefault();
+        });
+
+        document.body.addEventListener('dragleave', (event) => {
+            event.preventDefault();
+            if (!isOctetStream()) return;
+            dragCounter = Math.max(0, dragCounter - 1);
+            if (dragCounter === 0) {
+                dropZone.classList.remove('drag-active');
+            }
+        });
+
+        document.body.addEventListener('drop', (event) => {
+            event.preventDefault();
+            dragCounter = 0;
+            dropZone.classList.remove('drag-active');
+
+            if (!isOctetStream() || !event.dataTransfer.files.length) {
+                return;
+            }
+
+            fileInput.files = event.dataTransfer.files;
+            updateDropZoneLabel();
+            dropZone.classList.remove('invalid');
+            clearFormError();
+        });
+
         function validateForm() {
             contentInput.classList.remove('invalid');
-            fileInput.classList.remove('invalid');
+            dropZone.classList.remove('invalid');
 
             if (isOctetStream()) {
                 if (fileInput.files.length === 0) {
-                    fileInput.classList.add('invalid');
+                    dropZone.classList.add('invalid');
                     showFormError('Vyber soubor.');
                     return false;
                 }
