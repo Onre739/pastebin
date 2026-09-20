@@ -10,7 +10,7 @@ Podrobný popis požadavků a architektury:
 ## Funkce
 
 - Vytvoření pastu přes JSON (`POST /paste/json`) nebo form-urlencoded (`POST /paste/form`)
-- Nahrání skutečně binárního souboru beze změny přes `POST /paste/binary` (syrové tělo requestu, žádná JSON/base64 obálka) — homepage pro `Octet Stream` mimetype nabízí místo textového pole výběr souboru
+- Nahrání skutečně binárního souboru beze změny přes `POST /paste/binary` (syrové tělo requestu, žádná JSON/base64 obálka) — homepage pro `Octet Stream` mimetype nabízí místo textového pole výběr souboru kliknutím nebo přetažením (drag & drop kdekoli na stránce)
 - Zachování původního názvu souboru u binárních pastů — `Content-Disposition` při stažení použije skutečný název (např. `photo.png`), ne generický `{uuid}.bin`; po vytvoření souboru přes formulář se ID a odkaz ke stažení zobrazí přímo na stránce (viz [ADR 0009](docs/adr/0009-original-file-name-preservation.md))
 - Zobrazení pastu podle UUID (`GET /paste/{uuid}`), 404 pro neexistující/evikovaný paste
 - Renderování podle typu obsahu (`PlainText`, `Html`, `Markdown`, `OctetStream`)
@@ -56,6 +56,30 @@ cargo test
 
 Spustí unit testy (`src/store.rs`, `src/render.rs`) i integrační testy (`tests/routes_test.rs`) — dohromady pokrývají hraniční případy LRU evikce, rendering všech typů obsahu, HTTP vrstvu včetně chybových stavů a oddělené limity velikosti pro text/binární obsah.
 
+## CI/CD
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) (GitHub Actions), dva joby:
+- **test** — na každý `push`/`pull_request` do `main` spustí `cargo build` + `cargo test`.
+- **docker** — jen po `push` do `main` a jen když `test` uspěje: sestaví image podle `Dockerfile` a publikuje ho do GitHub Container Registry (`ghcr.io/<owner>/<repo>`, tagy `latest` a zkrácené SHA), bez extra secrets (vestavěný `GITHUB_TOKEN`).
+
+Repozitář sám o sobě nevynucuje "merge jen po zeleném CI" — to (a viditelnost GHCR balíčku, defaultně private) je potřeba nastavit ručně v GitHub Settings. Podrobnosti a zvažované alternativy (Docker Hub, `docker-compose.yml`) viz [ADR 0010](docs/adr/0010-github-actions-ci-docker-image.md).
+
+## Docker
+
+```
+docker build -t pastebin .
+
+docker run --rm -p 3000:3000 \
+  -e URL=0.0.0.0 \
+  -e PORT=3000 \
+  -e MAX_PASTES=100 \
+  -e MAX_PASTE_SIZE=1048576 \
+  -e MAX_FILE_SIZE=20971520 \
+  pastebin
+```
+
+Image (`Dockerfile`, multi-stage build) obsahuje jen zkompilovanou binárku, žádný Rust toolchain ani `.env` soubor — všech 5 proměnných z [Konfigurace](#konfigurace) je proto nutné předat přes `-e`/`--env-file`, jinak aplikace při startu hned panicne. `URL` musí být uvnitř kontejneru `0.0.0.0`, ne `127.0.0.1` (viz sekce Konfigurace) — jinak server naslouchá jen sám sobě a `-p` mapování portu se nepropojí.
+
 ## Struktura projektu
 
 ```
@@ -68,10 +92,12 @@ src/
   render.rs   - markdown/syntax highlighting/mermaid rendering, HTML šablony
   model.rs    - Paste, MimeKind, AppError
 templates/    - statické HTML šablony (zakompilované přes include_str!)
-  home.html     - domovská stránka s formulářem (textové pole nebo výběr souboru)
+  home.html     - domovská stránka s formulářem (textové pole, výběr/drag&drop souboru)
   markdown.html - stránka pro vyrenderovaný markdown, stejný vzhled jako home.html
 tests/        - integrační testy nad HTTP vrstvou
 docs/         - požadavky, architektura, ADR
+.github/workflows/ - CI/CD pipeline (GitHub Actions)
+Dockerfile    - multi-stage build (kompilace → štíhlý runtime image)
 ```
 
 ## Omezení

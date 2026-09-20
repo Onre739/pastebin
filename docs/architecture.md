@@ -133,3 +133,4 @@ flowchart TB
 | [0007](./adr/0007-dedicated-binary-endpoint.md) | Vyhrazený `POST /paste/binary` (extraktor `Bytes`) a oddělené limity velikosti `max_paste_size`/`max_file_size` | Accepted |
 | [0008](./adr/0008-base64-mcp-binary-tool.md) | Base64 pro binární obsah v MCP (`create_binary_paste`) místo syrových bajtů | Accepted |
 | [0009](./adr/0009-original-file-name-preservation.md) | Zachování původního názvu souboru (`Paste.file_name`, hlavička `X-File-Name-B64`, MCP `file_name` argument) a frontend fallback po vytvoření `OctetStream` pastu | Accepted |
+| [0010](./adr/0010-github-actions-ci-docker-image.md) | CI/CD přes GitHub Actions (build+test na push/PR, Docker image na push do `main`) a publikace do GHCR, bez `docker-compose.yml` | Accepted |
