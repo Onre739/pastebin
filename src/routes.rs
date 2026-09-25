@@ -30,6 +30,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/paste/form", post(post_paste_form))
         .route ("/paste/binary", post(post_paste_binary))
         .route("/paste/{uuid}", get(get_paste))
+        .route("/paste/{uuid}/raw", get(get_paste_raw))
         .layer(DefaultBodyLimit::max(max_body_size))
 
         .nest_service("/mcp", mcp_service)
@@ -72,11 +73,20 @@ async fn post_paste_binary(State(state): State<AppState>, headers: HeaderMap, bo
     Ok(Json(id))
 }
 
-async fn get_paste(Path(uuid): Path<Uuid>, State(state): State<AppState>) 
+async fn get_paste(Path(uuid): Path<Uuid>, State(state): State<AppState>)
 -> Result<impl IntoResponse, AppError> {
     let mut paste_store = state.paste_store.lock().unwrap();
     let style_store = &state.style_store;
 
     let paste = paste_store.record_view(uuid)?;
-    render::render_paste_page(&paste, style_store)
+    render::render_paste_page(paste, style_store)
+}
+
+async fn get_paste_raw(Path(uuid): Path<Uuid>, State(state): State<AppState>)
+-> Result<impl IntoResponse, AppError> {
+    let paste_store = state.paste_store.lock().unwrap();
+
+    // Use the read-only `get` method to avoid incrementing hits/last_seen_tick for raw fetches.
+    let paste = paste_store.get(uuid)?;
+    Ok(render::render_octet_stream_raw(paste))
 }

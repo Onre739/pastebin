@@ -64,11 +64,16 @@ impl PasteStore {
 
     pub fn record_view (&mut self, uuid: Uuid) -> Result<&Paste, AppError> {
         let index = self.pastes.iter().position(|p| p.id == uuid).ok_or(AppError::NotFound)?;
-        
+
         let tick = self.get_next_tick();
         self.pastes[index].update(tick);
-        
+
         Ok(&self.pastes[index])
+    }
+
+    // Returns a reference to the paste with the given UUID without modifying its hits or last_seen_tick.
+    pub fn get (&self, uuid: Uuid) -> Result<&Paste, AppError> {
+        self.pastes.iter().find(|p| p.id == uuid).ok_or(AppError::NotFound)
     }
     
     pub fn check_full_capacity(&self) -> bool {
@@ -224,7 +229,21 @@ use super::*;
         assert_eq!(paste_store.pastes[0].hits, 1, "Hits should have been incremented");
         assert_eq!(paste_store.pastes[0].last_seen_tick, 2, "Last seen tick should have been incremented to 2 (1 for insert, 1 for access)");
     }
-    
+
+    #[test]
+    fn get_does_not_increment_hits_or_tick () {
+        let mut paste_store = create_empty_store(5);
+        let paste = create_test_paste();
+
+        paste_store.insert(paste.content, paste.mimetype, None).expect("Insert failed");
+
+        let uuid = paste_store.pastes[0].id;
+        paste_store.get(uuid).expect("Should have found the paste");
+
+        assert_eq!(paste_store.pastes[0].hits, 0, "get() must not increment hits");
+        assert_eq!(paste_store.pastes[0].last_seen_tick, 1, "get() must not advance last_seen_tick (still just the insert tick)");
+    }
+
     #[test]
     fn same_tick () {
         let paste_store = create_empty_store(5);

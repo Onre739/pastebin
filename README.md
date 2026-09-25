@@ -11,7 +11,8 @@ Podrobný popis požadavků a architektury:
 
 - Vytvoření pastu přes JSON (`POST /paste/json`) nebo form-urlencoded (`POST /paste/form`)
 - Nahrání skutečně binárního souboru beze změny přes `POST /paste/binary` (syrové tělo requestu, žádná JSON/base64 obálka) — homepage pro `Octet Stream` mimetype nabízí místo textového pole výběr souboru kliknutím nebo přetažením (drag & drop kdekoli na stránce)
-- Zachování původního názvu souboru u binárních pastů — `Content-Disposition` při stažení použije skutečný název (např. `photo.png`), ne generický `{uuid}.bin`; po vytvoření souboru přes formulář se ID a odkaz ke stažení zobrazí přímo na stránce (viz [ADR 0009](docs/adr/0009-original-file-name-preservation.md))
+- Zachování původního názvu souboru u binárních pastů — `Content-Disposition` při stažení použije skutečný název (např. `photo.png`), ne generický `{uuid}.bin` (viz [ADR 0009](docs/adr/0009-original-file-name-preservation.md))
+- Náhledová stránka pro binární pasty (`GET /paste/{uuid}`) — jméno souboru, velikost, a pro rozpoznané obrázkové přípony inline náhled; syrová data (stažení) jsou na `GET /paste/{uuid}/raw`, které se nepočítá jako zobrazení (viz [ADR 0011](docs/adr/0011-octet-stream-preview-page.md))
 - Zobrazení pastu podle UUID (`GET /paste/{uuid}`), 404 pro neexistující/evikovaný paste
 - Renderování podle typu obsahu (`PlainText`, `Html`, `Markdown`, `OctetStream`)
 - Markdown → HTML (`pulldown-cmark`), zvýraznění syntaxe v blocích kódu (`syntect`, tmavé téma), bloky ```mermaid``` renderované na SVG (`mermaid-svg`) — výstup je obalený do stejné tmavé šablony jako homepage
@@ -26,7 +27,7 @@ Server na `POST /mcp` vystavuje Model Context Protocol server (Streamable HTTP t
 Dostupné nástroje:
 - `create_paste(content, mimetype)` — vytvoří nový textový paste (`PlainText`/`Html`/`Markdown`), vrátí jeho UUID (stejná validace jako `POST /paste/json`)
 - `create_binary_paste(content_base64, file_name?)` — vytvoří nový paste typu `OctetStream` z base64 zakódovaného obsahu; MCP obdoba `POST /paste/binary` — JSON-RPC neumí přenést syrové bajty, takže base64 je jediná cesta, jak binární data protlačit přes MCP tool call (stejný vzor používá i MCP specifikace pro binární content bloky). Nepovinný `file_name` se uloží a použije v `Content-Disposition` při stažení pastu.
-- `get_paste(id)` — zobrazí paste podle UUID; má stejný vedlejší efekt jako běžné zobrazení (`hits`/`last_seen_tick` se aktualizují). Textový obsah se vrací surový (u `Markdown` tedy zdrojový text, ne vyrenderované HTML), binární (`OctetStream`) obsah se jen popíše velikostí — čtení binárních dat zpátky přes MCP zatím není řešeno (viz `docs/requirements.md`, otevřené otázky)
+- `get_paste(id)` — zobrazí paste podle UUID; má stejný vedlejší efekt jako běžné zobrazení (`hits`/`last_seen_tick` se aktualizují). Textový obsah se vrací surový (u `Markdown` tedy zdrojový text, ne vyrenderované HTML), binární (`OctetStream`) obsah se jen popíše velikostí s odkazem na `GET /paste/{uuid}/raw` — čtení binárních dat zpátky přes MCP zatím není řešeno (viz `docs/requirements.md`, otevřené otázky)
 
 ## Spuštění
 
@@ -92,8 +93,9 @@ src/
   render.rs   - markdown/syntax highlighting/mermaid rendering, HTML šablony
   model.rs    - Paste, MimeKind, AppError
 templates/    - statické HTML šablony (zakompilované přes include_str!)
-  home.html     - domovská stránka s formulářem (textové pole, výběr/drag&drop souboru)
-  markdown.html - stránka pro vyrenderovaný markdown, stejný vzhled jako home.html
+  home.html         - domovská stránka s formulářem (textové pole, výběr/drag&drop souboru)
+  markdown.html     - stránka pro vyrenderovaný markdown, stejný vzhled jako home.html
+  octet_stream.html - náhledová stránka pro binární pasty (jméno, velikost, obrázkový náhled/download)
 tests/        - integrační testy nad HTTP vrstvou
 docs/         - požadavky, architektura, ADR
 .github/workflows/ - CI/CD pipeline (GitHub Actions)

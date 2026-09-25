@@ -149,35 +149,6 @@
             font-size: 0.78rem;
             color: var(--muted);
         }
-
-        .success-panel {
-            display: none;
-            margin-top: 20px;
-        }
-
-        .success-panel.visible {
-            display: block;
-        }
-
-        .success-panel h3 {
-            color: var(--text);
-        }
-
-        .success-panel code {
-            display: block;
-            margin: 6px 0 14px;
-            padding: 8px 10px;
-            background: var(--bg);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            font-family: "Consolas", monospace;
-            font-size: 0.9rem;
-            word-break: break-all;
-        }
-
-        .success-panel a {
-            color: var(--accent);
-        }
     </style>
 </head>
 <body>
@@ -209,13 +180,6 @@
                 <button id="submit">Submit</button>
             </form>
         </div>
-
-        <div class="panel success-panel" id="success-panel">
-            <h3>File paste created</h3>
-            <p>Opening the paste's URL downloads the file directly, so here's its ID:</p>
-            <code id="success-id"></code>
-            <a id="success-link" href="#">Download the file</a>
-        </div>
     </div>
 
     <script>
@@ -227,9 +191,6 @@
         const fileHint = document.getElementById('file-hint');
         const mimetypeSelect = document.getElementById('mimetype');
         const formError = document.getElementById('form-error');
-        const successPanel = document.getElementById('success-panel');
-        const successId = document.getElementById('success-id');
-        const successLink = document.getElementById('success-link');
 
         function isOctetStream() {
             return mimetypeSelect.value === 'OctetStream';
@@ -248,7 +209,6 @@
             formError.classList.remove('visible');
             contentInput.classList.remove('invalid');
             dropZone.classList.remove('invalid');
-            successPanel.classList.remove('visible');
         }
 
         mimetypeSelect.addEventListener('change', syncInputForMimetype);
@@ -371,14 +331,7 @@
 
             if (response.ok) {
                 const id = await response.json();
-
-                if (isOctetStream()) {
-                    successId.textContent = id;
-                    successLink.href = '/paste/' + id;
-                    successPanel.classList.add('visible');
-                } else {
-                    window.location.href = '/paste/' + id;
-                }
+                window.location.href = '/paste/' + id;
             } else {
                 showFormError(`HTTP Chyba: ${response.status} - ${response.statusText}`);
                 console.error(`HTTP Chyba: ${response.status} - ${response.statusText}`);

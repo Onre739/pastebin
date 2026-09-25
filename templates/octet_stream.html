@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Pastebin by Onre</title>
+    <style>
+        :root {
+            --bg: #0f1115;
+            --panel: #171a21;
+            --border: #2a2e38;
+            --text: #e4e6eb;
+            --muted: #8a8f98;
+            --accent: #5b8cff;
+            --accent-hover: #7ba1ff;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+            display: flex;
+            justify-content: center;
+            padding: 40px 20px;
+        }
+
+        .page {
+            width: 100%;
+            max-width: 640px;
+        }
+
+        h1.site-title {
+            text-align: center;
+            font-size: 1.8rem;
+            margin-bottom: 32px;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 28px;
+            text-align: center;
+        }
+
+        .file-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            word-break: break-all;
+            margin: 0 0 4px;
+        }
+
+        .file-size {
+            color: var(--muted);
+            font-size: 0.9rem;
+            margin: 0 0 20px;
+        }
+
+        .preview {
+            margin-bottom: 20px;
+        }
+
+        .preview img {
+            max-width: 100%;
+            max-height: 420px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .no-preview {
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .download-button {
+            display: inline-block;
+            background: var(--accent);
+            color: #fff;
+            text-decoration: none;
+            border-radius: 6px;
+            padding: 10px 22px;
+            font-size: 0.95rem;
+        }
+
+        .download-button:hover {
+            background: var(--accent-hover);
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <h1 class="site-title">Pastebin by Onre</h1>
+        <div class="panel">
+            <p class="file-name">{{FILE_NAME}}</p>
+            <p class="file-size">{{FILE_SIZE}}</p>
+            <div class="preview">{{PREVIEW}}</div>
+            <a class="download-button" href="{{RAW_URL}}">Download</a>
+        </div>
+    </div>
+</body>
+</html>

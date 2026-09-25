@@ -15,7 +15,7 @@
 | **Kapacita (MAX_PASTES)** | Maximální počet pastů, které smí `PasteStore` držet současně. Konfigurováno přes `.env`. |
 | **Limit velikosti textu (MAX_PASTE_SIZE)** | Maximální povolená velikost `content` pro textové mimetypy (`PlainText`, `Html`, `Markdown`) v bajtech. Konfigurováno přes `.env`. |
 | **Limit velikosti souboru (MAX_FILE_SIZE)** | Maximální povolená velikost `content` pro `OctetStream` v bajtech — samostatná, typicky větší hodnota než `MAX_PASTE_SIZE`, protože binární soubory (obrázky, archivy) běžně přesahují to, co je rozumné pro textový paste. `PasteStore::insert` vybírá platný limit podle `mimetype`. |
-| **file_name / sanitizace názvu souboru** | Volitelný původní název nahraného souboru u `OctetStream` pastů, uložený v `Paste.file_name`. `model::sanitize_file_name` ho očistí (odstraní řídicí znaky a uvozovky, ořízne na 255 znaků) a případně vrátí `None`. Používá se v `Content-Disposition` hlavičce při zobrazení (FR-6), přenáší se přes hlavičku `X-File-Name-B64` (HTTP, FR-17a) nebo argument `file_name` (MCP, FR-18). |
+| **file_name / sanitizace názvu souboru** | Volitelný původní název nahraného souboru u `OctetStream` pastů, uložený v `Paste.file_name`. `model::sanitize_file_name` ho očistí (odstraní řídicí znaky a uvozovky, ořízne na 255 znaků) a případně vrátí `None`. Používá se v `Content-Disposition` hlavičce při stažení (FR-19) i na náhledové stránce (FR-6a — jméno, případně detekce obrázku podle přípony přes `model::is_image_file_name`), přenáší se přes hlavičku `X-File-Name-B64` (HTTP, FR-17a) nebo argument `file_name` (MCP, FR-18). Na náhledové stránce se vkládá do HTML jen po escapování (`render::html_escape`, viz NFR-16). |
 | **AppError** | Doménový chybový enum (`model::AppError`) implementující `IntoResponse`, mapující chyby na HTTP stavové kódy. |
 | **Render strategie** | Funkce `render::render_paste_page`, která podle `MimeKind` vybere způsob vykreslení odpovědi (strategy pattern, žádné trait objekty). |
 | **MCP server (PastebinMcp)** | Druhý protokolový adaptér nad stejnou doménou (`mcp::PastebinMcp`), vystavený na `POST /mcp` přes Streamable HTTP transport knihovny `rmcp`. Nesahá na `render.rs` — obsah pastů vrací jako surový text, ne vyrenderovaný HTML. |
@@ -30,13 +30,14 @@
 | FR-3 | Systém při vytvoření pastu vygeneruje náhodné `Uuid` (v4) a přidělí mu aktuální generaci (`current_tick`). |
 | FR-4 | Systém zpřístupní existující paste na `GET /paste/{uuid}`. Pokud paste s daným UUID neexistuje (nikdy nevznikl nebo byl evikován), vrátí `404`. |
 | FR-5 | Při každém úspěšném zobrazení pastu (FR-4) systém zvýší jeho `hits` o 1 a nastaví `last_seen_tick` na novou generaci (`record_view`). |
-| FR-6 | Systém vykreslí obsah pastu podle `MimeKind`: `PlainText` → `text/plain` beze změny; `Html` → `text/html` beze změny (bez sanitizace); `Markdown` → převod na HTML; `OctetStream` → binární stažení s hlavičkou `Content-Disposition: attachment; filename="..."` — použije se `paste.file_name`, pokud byl při vytvoření zadán a projde sanitizací (viz FR-17a/FR-18), jinak fallback na `"{uuid}.bin"`. |
+| FR-6 | Systém vykreslí obsah pastu podle `MimeKind`: `PlainText` → `text/plain` beze změny; `Html` → `text/html` beze změny (bez sanitizace); `Markdown` → převod na HTML; `OctetStream` → HTML náhledová stránka, ne přímo binární data (viz FR-6a). |
+| FR-6a | Náhledová stránka `OctetStream` pastu (`templates/octet_stream.html`, `render::render_octet_stream_page`) zobrazí jméno souboru (`paste.file_name`, fallback `"{uuid}.bin"`) a velikost. Pokud přípona jména odpovídá obrázku (`model::is_image_file_name` — `png/jpg/jpeg/gif/webp/bmp/svg/ico`), vloží inline `<img src=".../raw">` náhled; jinak zobrazí text "No preview available for this file type." Obojí doplněné tlačítkem Download vedoucím na FR-19. Jméno souboru se do HTML vkládá jen po escapování (NFR-16). |
 | FR-7 | Pro `Markdown` systém převede text na HTML pomocí `pulldown-cmark`, včetně základního formátování (nadpisy, tučné/kurzíva, seznamy, tabulky, přeškrtnutí, chytrá interpunkce, úkolové seznamy). |
 | FR-8 | Uvnitř markdownu systém rozpozná blok kódu s jazykem a obarví ho pomocí `syntect` (motiv "Solarized (light)", inline styly). |
 | FR-9 | Uvnitř markdownu systém rozpozná blok s jazykem `mermaid` a vyrenderuje ho na SVG pomocí `mermaid-svg`, vloženém přímo do výsledného HTML. Výsledný SVG se obalí do světlé karty (`.mermaid-diagram`), protože mermaid generuje tmavý text na průhledném pozadí, který by na tmavé stránce nebyl čitelný. |
 | FR-9a | Vyrenderovaný `Markdown` se obalí do stránkové šablony `templates/markdown.html` se stejnými CSS proměnnými (barvy, layout) jako `home.html` — konzistentní vzhled napříč aplikací. Blok kódu uvnitř markdownu se zvýrazní tmavým motivem `syntect` ("Solarized (dark)"), aby seděl na tmavé pozadí stránky. `PlainText`/`Html`/`OctetStream` touto šablonou neprochází (viz FR-6). |
 | FR-10 | Systém zobrazí na `GET /` statickou domovskou stránku s formulářem pro vytvoření pastu a výběrem `mimetype`. Pro `PlainText`/`Html`/`Markdown` nabízí textové pole; pro `OctetStream` textové pole skryje a nabídne výběr souboru místo něj — buď kliknutím (systémový dialog), nebo přetažením (drag & drop) kdekoli na stránce, ne jen na malý vizuální box (`dragenter`/`dragover`/`drop` listenery na `document.body`). |
-| FR-10a | Po úspěšném vytvoření `OctetStream` pastu přes formulář na `GET /` frontend nenaviguje na `/paste/{uuid}` (to by kvůli FR-6 rovnou spustilo stažení souboru bez viditelné stránky), ale zobrazí panel přímo na domovské stránce s UUID nově vytvořeného pastu a odkazem na jeho stažení. Pro `PlainText`/`Html`/`Markdown` frontend beze změny naviguje na `/paste/{uuid}` (viz [ADR 0009](./adr/0009-original-file-name-preservation.md)). |
+| FR-10a | ~~Po úspěšném vytvoření `OctetStream` pastu přes formulář na `GET /` frontend nenaviguje na `/paste/{uuid}`, ale zobrazí panel přímo na domovské stránce...~~ **Nahrazeno [ADR 0011](./adr/0011-octet-stream-preview-page.md).** `GET /paste/{uuid}` teď u `OctetStream` vrací HTML náhled (FR-6a), ne přímo bajty, takže po vytvoření pastu frontend beze změny naviguje na `/paste/{uuid}` pro všechny mimetypy — dřívější `success-panel` workaround z [ADR 0009](./adr/0009-original-file-name-preservation.md) přestal být potřeba a byl z `home.html` odstraněn. |
 | FR-11 | Pokud počet pastů v `PasteStore` dosáhne `max_pastes`, systém před vložením nového pastu provede countdown LRU evikci (viz doménový slovník), dokud se neuvolní alespoň jedno místo. |
 | FR-12 | Systém odmítne vytvoření pastu s prázdným `content` (`AppError::BadRequest`, `400`) — platí pro všechny mimetypy včetně `OctetStream`/prázdného souboru. |
 | FR-13 | Systém odmítne vytvoření pastu, jehož `content` přesahuje limit platný pro jeho `mimetype` (`AppError::PayloadTooLarge`, `413`) — `max_paste_size` pro `PlainText`/`Html`/`Markdown`, `max_file_size` pro `OctetStream` (viz FR-17). |
@@ -46,6 +47,7 @@
 | FR-17 | Systém umožní vytvořit paste typu `OctetStream` odesláním syrových binárních dat jako těla requestu na `POST /paste/binary` (extraktor `axum::body::Bytes`, bez JSON/base64 obálky). Mimetype je pro tento endpoint vždy `OctetStream`, žádné další pole se neposílá. Na rozdíl od `POST /paste/json`/`POST /paste/form` (kde `content` musí být validní UTF-8 text, protože prochází `String`) tento endpoint podporuje libovolná binární data. |
 | FR-17a | `POST /paste/binary` volitelně přijme hlavičku `X-File-Name-B64` s původním názvem souboru, base64 zakódovaným (hlavičky jsou ASCII-only, název souboru může být libovolný Unicode). Po dekódování projde `model::sanitize_file_name` a uloží se do `Paste.file_name`. Chybějící nebo nevalidní hlavička (špatný base64, prázdný název po sanitizaci) vede tiše k `file_name: None`, ne k chybě requestu — viz FR-6 pro použití při zobrazení. |
 | FR-18 | MCP server nabízí nástroj `create_binary_paste(content_base64, file_name?)`, který base64 dekóduje `content_base64` a vytvoří paste typu `OctetStream` — MCP obdoba FR-17/FR-17a pro protokol, kde argumenty nástroje jsou vždy JSON (a JSON string musí být validní Unicode text, nejde do něj vložit syrové bajty přímo). Volitelný `file_name` (prostý string, žádné kódování navíc potřeba) projde stejnou `sanitize_file_name` funkcí jako FR-17a a uloží se do `Paste.file_name`. Nesprávný base64 vrátí `isError: true` s popisnou chybou, ne pád serveru. |
+| FR-19 | Systém zpřístupní syrová binární data `OctetStream` pastu na `GET /paste/{uuid}/raw` — `Content-Type: application/octet-stream`, `Content-Disposition: attachment; filename="..."` (`paste.file_name`, fallback `"{uuid}.bin"`, stejně jako dřív FR-6). Použito jako cíl tlačítka Download i jako `src` obrázkového náhledu na stránce z FR-6a — funguje pro obojí, protože `Content-Disposition: attachment` prohlížeče vynucují jen při navigaci, ne při fetchi subresource jako `<img src>`. Na rozdíl od FR-5/FR-6 se toto nepočítá jako "zobrazení" — čte se přes read-only `PasteStore::get`, ne `record_view`, takže `hits`/`last_seen_tick` se nezvyšují (viz [ADR 0011](./adr/0011-octet-stream-preview-page.md)). |
 
 ## 3. Nefunkční požadavky (NFR)
 
@@ -61,11 +63,12 @@
 | NFR-8 | Žádná autentizace, autorizace ani rate-limiting nad endpointy. | Kdokoli s přístupem k serveru může vytvářet i číst libovolné pasty, pokud zná/uhodne UUID. |
 | NFR-9 | `MimeKind::Html` pasty jsou bezpečnostně ekvivalentní neomezenému stored-XSS vektoru — kdokoli může vytvořit paste s libovolným JavaScriptem, který se spustí v kontextu domény serveru při zobrazení. | Přijatelné riziko pro cvičný/interní provoz, nevhodné pro veřejný provoz bez dalších opatření. |
 | NFR-10 | Formální SLA pro latenci (např. p50/p99) není měřeno ani testováno. | Otevřený bod — viz kapitola 6. |
-| NFR-11 | Automatizované pokrytí testy: 14 unit testů (`src/store.rs`, `src/render.rs`) + 20 integračních testů (`tests/routes_test.rs`) = 34 testů, spouštěných přes `cargo test`. | Pokrývají hraniční případy LRU (kapacita 1, prázdný store, remíza v ticku, vícekolová dekrementace), rendering (markdown, syntax highlighting, mermaid, plain/octet passthrough, `Content-Disposition` s vlastním i fallback názvem souboru), HTTP vrstvu (vytvoření, zobrazení pro všechny 4 mimetypy, 404, 413, 400, 422) a `POST /paste/binary` včetně roundtripu s reálnými nevalidními-UTF8 bajty (FR-17) a zachování/sanitizace/fallbacku názvu souboru přes `X-File-Name-B64` (FR-17a). Funkčnost MCP endpointu (FR-15, FR-16, FR-18) je zatím ověřená jen manuálně (viz AC-12, AC-13, AC-14), ne automatizovaným testem. |
+| NFR-11 | Automatizované pokrytí testy: 18 unit testů (`src/store.rs`, `src/render.rs`) + 23 integračních testů (`tests/routes_test.rs`) = 41 testů, spouštěných přes `cargo test`. | Pokrývají hraniční případy LRU (kapacita 1, prázdný store, remíza v ticku, vícekolová dekrementace), rendering (markdown, syntax highlighting, mermaid, plain/octet passthrough, `Content-Disposition` s vlastním i fallback názvem souboru), náhledovou stránku `OctetStream` (obrázkový náhled, fallback bez náhledu, escapování názvu souboru — FR-6a/NFR-16), `GET /paste/{uuid}/raw` (bajty, 404, nezvyšuje `hits`/`last_seen_tick` — FR-19), HTTP vrstvu (vytvoření, zobrazení pro všechny 4 mimetypy, 404, 413, 400, 422) a `POST /paste/binary` včetně roundtripu s reálnými nevalidními-UTF8 bajty (FR-17) a zachování/sanitizace/fallbacku názvu souboru přes `X-File-Name-B64` (FR-17a). Funkčnost MCP endpointu (FR-15, FR-16, FR-18) je zatím ověřená jen manuálně (viz AC-12, AC-13, AC-14), ne automatizovaným testem. |
 | NFR-12 | `POST /mcp` sdílí stejný `AppState`/`PasteStore` jako HTTP vrstva — žádný oddělený stav ani perzistence. Správa MCP session (`LocalSessionManager`) je taky čistě v paměti procesu, ztrácí se při restartu stejně jako pasty. | Rozšiřuje NFR-3 i na MCP vrstvu. |
 | NFR-13 | Na `POST /mcp` platí stejná absence autentizace/autorizace/rate-limitingu jako na HTTP endpointech. | Rozšiřuje NFR-8/NFR-9 — kdokoli s přístupem k `/mcp` může přes nástroj `create_paste` vytvořit paste typu `Html` se stejným XSS rizikem jako přes `POST /paste/json`. |
 | NFR-14 | CI (`.github/workflows/ci.yml`, GitHub Actions) spustí `cargo build` + `cargo test` na každý `push`/`pull_request` do `main`. | Viz [ADR 0010](./adr/0010-github-actions-ci-docker-image.md) a otevřená otázka č. 12 — nic v repozitáři samo o sobě nevynucuje "merge jen po zeleném CI", to vyžaduje ruční branch protection v GitHub Settings. |
 | NFR-15 | Aplikace je distribuovatelná jako Docker image (`Dockerfile`, multi-stage build) — po `push` do `main` se automaticky sestaví a publikuje do `ghcr.io/<owner>/<repo>` (tagy `latest` + zkrácené SHA). Konfigurace (`URL`, `PORT`, `MAX_PASTES`, `MAX_PASTE_SIZE`, `MAX_FILE_SIZE`) se do kontejneru předává přes `docker run -e ...`, `.env` soubor se do image nezapíná. | Viz [ADR 0010](./adr/0010-github-actions-ci-docker-image.md) a otevřená otázka č. 13 — nově publikovaný GHCR balíček je defaultně private. Žádný `docker-compose.yml` — aplikace nemá žádné další služby k orchestraci (viz NFR-3). |
+| NFR-16 | `paste.file_name` se na náhledové stránce (FR-6a) vkládá do HTML (viditelný text i `<img alt>`) až po escapování (`render::html_escape` — `& < > " '`). | Nový, jinak nehlídaný vektor stored-XSS, který by bez escapování vznikl poprvé u `OctetStream` — soubor nazvaný např. `<script>alert(1)</script>.png` by se jinak vykonal v prohlížeči diváka. Odlišné od NFR-9 (tam je XSS u `MimeKind::Html` záměrně nefiltrovaný obsah pastu samotného, ne metadata jako název souboru). |
 
 ## 4. Akceptační kritéria
 
@@ -129,17 +132,33 @@ Then odpověď má status `422` (chyba deserializace JSON tělesa na úrovni axu
 **AC-11a — Binární upload přes `/paste/binary` (FR-17)**
 Given libovolný stav store,
 When klient pošle `POST /paste/binary` s tělem obsahujícím bajty, které nejsou validní UTF-8 (např. `\x00\x9f\x92\x96\xff`),
-Then odpověď má status `200` a tělo obsahuje validní `Uuid`; následné `GET /paste/{uuid}` vrátí `Content-Type: application/octet-stream` a bajt-po-bajtu identický obsah, včetně bajtů, které by přes `POST /paste/json` selhaly na parsování JSON.
+Then odpověď má status `200` a tělo obsahuje validní `Uuid`; následné `GET /paste/{uuid}/raw` vrátí `Content-Type: application/octet-stream` a bajt-po-bajtu identický obsah, včetně bajtů, které by přes `POST /paste/json` selhaly na parsování JSON.
 
 **AC-11b — Prázdné/příliš velké binární tělo je odmítnuto (FR-12, FR-13, FR-17)**
 Given `max_file_size` nastavené na konkrétní hodnotu,
 When klient pošle na `POST /paste/binary` prázdné tělo, nebo tělo přesahující `max_file_size`,
 Then odpověď má status `400` (prázdné), resp. `413` (nad limitem) a paste se nevytvoří.
 
-**AC-11c — Zachování názvu souboru přes `X-File-Name-B64` (FR-17a, FR-6)**
+**AC-11c — Zachování názvu souboru přes `X-File-Name-B64` (FR-17a, FR-19)**
 Given libovolný stav store,
 When klient pošle `POST /paste/binary` s hlavičkou `X-File-Name-B64` obsahující base64 zakódovaný název souboru (např. `photo.png`, i s ne-ASCII znaky jako `obrázek.png`),
-Then následné `GET /paste/{uuid}` vrátí `Content-Disposition: attachment; filename="<dekódovaný název>"`. Bez hlavičky se použije fallback `"{uuid}.bin"` (FR-6); název obsahující uvozovky se sanitizací zbaví uvozovek (`model::sanitize_file_name`), aby zůstala hlavička validní.
+Then následné `GET /paste/{uuid}/raw` vrátí `Content-Disposition: attachment; filename="<dekódovaný název>"`. Bez hlavičky se použije fallback `"{uuid}.bin"` (FR-19); název obsahující uvozovky se sanitizací zbaví uvozovek (`model::sanitize_file_name`), aby zůstala hlavička validní.
+
+**AC-11d — Náhledová stránka `OctetStream` (FR-6a)**
+Given `OctetStream` paste s `file_name` odpovídajícím obrázkové příponě (např. `photo.png`),
+When klient zavolá `GET /paste/{uuid}`,
+Then odpověď má `Content-Type: text/html; charset=utf-8` (ne `application/octet-stream`), žádnou `Content-Disposition` hlavičku, a tělo obsahuje `<img src="/paste/{uuid}/raw">` a jméno souboru.
+Given `OctetStream` paste s `file_name` bez obrázkové přípony (např. `archive.zip`),
+When klient zavolá `GET /paste/{uuid}`,
+Then tělo neobsahuje `<img`, ale text "No preview available for this file type."
+Given `OctetStream` paste s `file_name` obsahujícím `<script>...</script>`,
+When klient zavolá `GET /paste/{uuid}`,
+Then tělo obsahuje escapovanou verzi (`&lt;script&gt;`), ne syrový tag.
+
+**AC-11e — `GET /paste/{uuid}/raw` nepočítá se jako zobrazení (FR-19)**
+Given existující `OctetStream` paste s `hits = 0`,
+When klient třikrát zavolá `GET /paste/{uuid}/raw`,
+Then `hits` pastu zůstává `0` a `last_seen_tick` se nezmění — na rozdíl od `GET /paste/{uuid}` (FR-5). Pro neexistující/evikovaný paste vrátí `GET /paste/{uuid}/raw` `404` stejně jako FR-4.
 
 **AC-12 — Vytvoření pastu přes MCP nástroj (FR-15)**
 Given inicializovaná MCP session na `POST /mcp` (po `initialize` handshake),
@@ -154,7 +173,7 @@ Then odpověď má `isError: false`, textový obsah ve tvaru `"[Mimetype] obsah"
 **AC-14 — Vytvoření binárního pastu přes MCP nástroj (FR-18)**
 Given inicializovaná MCP session na `POST /mcp`,
 When klient zavolá `tools/call` s `name: "create_binary_paste"` a `{"content_base64": "<base64 kódování bajtů, které nejsou validní UTF-8>", "file_name": "photo.png"}`,
-Then odpověď má `isError: false` a textový obsah je validní `Uuid`; následné `GET /paste/{uuid}` vrátí `Content-Type: application/octet-stream`, bajt-po-bajtu identický obsah jako před base64 zakódováním a `Content-Disposition: attachment; filename="photo.png"`. `file_name` je nepovinný (bez něj platí fallback `"{uuid}.bin"`, FR-6) a neplatný base64 v `content_base64` vrátí `isError: true` s popisnou chybou.
+Then odpověď má `isError: false` a textový obsah je validní `Uuid`; následné `GET /paste/{uuid}/raw` vrátí `Content-Type: application/octet-stream`, bajt-po-bajtu identický obsah jako před base64 zakódováním a `Content-Disposition: attachment; filename="photo.png"`. `file_name` je nepovinný (bez něj platí fallback `"{uuid}.bin"`, FR-19) a neplatný base64 v `content_base64` vrátí `isError: true` s popisnou chybou.
 
 ## 5. Hranice systému
 
@@ -199,7 +218,8 @@ flowchart LR
 - `POST /paste/json`
 - `POST /paste/form`
 - `POST /paste/binary` (syrové binární tělo, bez JSON/form obálky — viz FR-17)
-- `GET /paste/{uuid}`
+- `GET /paste/{uuid}` (u `OctetStream` HTML náhled, ne přímo bajty — viz FR-6a)
+- `GET /paste/{uuid}/raw` (syrová binární data `OctetStream` pastu — viz FR-19)
 - `POST /mcp` (Model Context Protocol, Streamable HTTP transport — JSON-RPC)
 
 ## 6. Otevřené otázky
@@ -214,6 +234,8 @@ flowchart LR
 8. **`get_paste` přes MCP vrací u `Markdown` surový zdroj, ne vyrenderované HTML** — záměrná odchylka od `GET /paste/{uuid}` (FR-6/FR-7), protože pro MCP/LLM klienta je čitelnější syrový text než HTML blob. Stálo by za úvahu, jestli časem nepřidat i variantu/parametr pro vyrenderovaný výstup, kdyby ho MCP klient chtěl.
 9. **MCP endpoint zatím nemá automatizované testy** (na rozdíl od HTTP vrstvy, viz NFR-11) — funkčnost byla ověřena jen manuálně přes reálné JSON-RPC requesty.
 10. **Zápis binárních dat přes MCP je řešen (FR-18), čtení ne — asymetrie.** `create_binary_paste` umí přijmout libovolná binární data (base64), ale `get_paste` u `OctetStream` obsahu stále jen vrátí počet bajtů, ne samotný obsah — MCP klient si binární paste nemůže přes `get_paste` stáhnout, musí sáhnout na `GET /paste/{uuid}` přes běžný HTTP klient mimo MCP. Symetrické řešení by bylo `get_paste` u `OctetStream` vracet obsah taky jako base64 (stejný vzor jako `image`/`blob` content bloky v samotné MCP specifikaci).
-11. **Přímý odkaz na `OctetStream` paste pořád jen stáhne soubor, bez viditelné stránky (FR-10a, [ADR 0009](./adr/0009-original-file-name-preservation.md)).** Řešení zvolené pro FR-10a opravuje jen tok "vytvoř přes formulář na `GET /` → uvidíš ID" — pokud ale někdo dostane přímý odkaz `/paste/{uuid}` na `OctetStream` paste jinou cestou (zkopírovaný, sdílený mimo formulář), pořád dostane jen vynucené stažení souboru, žádnou informační stránku s ID/velikostí/počtem zobrazení. Obecnější řešení (samostatná info stránka + dedikovaný download endpoint, nebo content negotiation přes query parametr/`Accept` hlavičku) bylo zvažováno, ale zatím neimplementováno.
+11. ~~Přímý odkaz na `OctetStream` paste pořád jen stáhne soubor, bez viditelné stránky.~~ **Vyřešeno v [ADR 0011](./adr/0011-octet-stream-preview-page.md)** — `GET /paste/{uuid}` teď obecně (ne jen po vytvoření přes formulář) vrací HTML náhledovou stránku (FR-6a), syrová data se přesunula na `GET /paste/{uuid}/raw` (FR-19). `success-panel` hack z FR-10a/ADR 0009 díky tomu odpadl.
 12. **CI nic nevynucuje na úrovni repozitáře (NFR-14, [ADR 0010](./adr/0010-github-actions-ci-docker-image.md)).** Workflow se spustí a nahlásí status, ale bez zapnutí branch protection rules v GitHub Settings (mimo verzovaný kód) nic nebrání mergi do `main` i se selhávajícím CI.
 13. **GHCR balíček je po prvním publikování private (NFR-15, [ADR 0010](./adr/0010-github-actions-ci-docker-image.md)).** Stažení `ghcr.io/<owner>/<repo>` bez přihlášení (`docker login`) vyžaduje ruční změnu viditelnosti balíčku na public v Package settings. Zároveň `docker` job v pipeline zatím publikuje jen tagy `latest`/SHA při každém push do `main`, žádné sémantické verzování podle release tagů.
+14. **Náhled `OctetStream` pastů je jen pro obrázky (FR-6a, [ADR 0011](./adr/0011-octet-stream-preview-page.md)).** Video/audio přes `<video>`/`<audio>` by šlo doplnit stejným vzorem jako `<img>` (subresource fetch, `Content-Disposition: attachment` na `/raw` nevadí). PDF přes `<iframe>` by byl problematičtější — iframe navigace `attachment` hlavičku typicky respektuje, takže by to vynutilo stažení/prázdný frame místo náhledu, dokud by `/raw` neuměl vracet `inline` variantu (např. přes query parametr).
+15. **Detekce "je to obrázek" je heuristika podle přípony, ne skutečný sniff bajtů (FR-6a, `model::is_image_file_name`).** Vychází čistě z `file_name` (uživatelem zadaný/nahraný název), ne z reálného obsahu souboru. Přejmenovaný nesouborový obsah na `.png` se pokusí zobrazit jako `<img>`, ale nezpůsobí žádnou chybu — pokud bajty nejsou platný obrázek, prohlížeč jen nic nevykreslí (rozbitá ikona).

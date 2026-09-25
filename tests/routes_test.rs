@@ -144,7 +144,7 @@ async fn test_post_paste_binary_roundtrip_via_http() {
     let id = Uuid::parse_str(str::from_utf8(&body).unwrap().trim_matches('"')).unwrap();
 
     let get_response = app
-        .oneshot(Request::builder().uri(&format!("/paste/{}", id)).body(Body::empty()).unwrap())
+        .oneshot(Request::builder().uri(&format!("/paste/{}/raw", id)).body(Body::empty()).unwrap())
         .await
         .unwrap();
 
@@ -378,7 +378,37 @@ async fn test_get_paste_markdown() {
 }
 
 #[tokio::test]
-async fn test_get_paste_octet_stream() {
+async fn test_get_paste_octet_stream_shows_preview_page() {
+    let (app, arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
+
+    let binary_content = vec![1, 2, 3, 4];
+
+    let mut paste_store = arc_paste_store.lock().unwrap();
+    let id = paste_store.insert(binary_content, model::MimeKind::OctetStream, Some("photo.png".to_string())).expect("Insert failed");
+    drop(paste_store); // Necessary to release the lock before making the request
+
+    let response = app
+        .oneshot(Request::builder().uri(&format!("/paste/{}", id)).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200, "Expected 200 OK for existing paste");
+
+    let content_type = response.headers().get(header::CONTENT_TYPE).expect("missing Content-Type").to_str().unwrap();
+    assert_eq!(content_type, "text/html; charset=utf-8", "GET /paste/{{uuid}} should show an HTML preview page for OctetStream, not the raw file");
+    assert!(response.headers().get(header::CONTENT_DISPOSITION).is_none(), "the preview page itself must not force a download");
+
+    let body = body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("failed to read response body");
+    let body_str = str::from_utf8(&body).expect("response body should be valid UTF-8");
+
+    assert!(body_str.contains("photo.png"), "page should show the file name");
+    assert!(body_str.contains(&format!("/paste/{}/raw", id)), "page should link to the raw download URL");
+}
+
+#[tokio::test]
+async fn test_get_paste_raw_octet_stream() {
     let (app, arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
 
     let binary_content = vec![0u8, 159, 146, 150, 1, 2, 3, 255];
@@ -388,7 +418,7 @@ async fn test_get_paste_octet_stream() {
     drop(paste_store); // Necessary to release the lock before making the request
 
     let response = app
-        .oneshot(Request::builder().uri(&format!("/paste/{}", id)).body(Body::empty()).unwrap())
+        .oneshot(Request::builder().uri(&format!("/paste/{}/raw", id)).body(Body::empty()).unwrap())
         .await
         .unwrap();
 
@@ -406,6 +436,40 @@ async fn test_get_paste_octet_stream() {
         .expect("failed to read response body");
 
     assert_eq!(body.as_ref(), binary_content.as_slice(), "Response body should contain the raw binary content unchanged");
+}
+
+#[tokio::test]
+async fn test_get_paste_raw_does_not_count_as_a_view() {
+    let (app, arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
+
+    let mut paste_store = arc_paste_store.lock().unwrap();
+    let id = paste_store.insert(vec![1, 2, 3, 4], model::MimeKind::OctetStream, None).expect("Insert failed");
+    drop(paste_store);
+
+    for _ in 0..3 {
+        let response = app
+            .clone()
+            .oneshot(Request::builder().uri(&format!("/paste/{}/raw", id)).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+    }
+
+    let paste_store = arc_paste_store.lock().unwrap();
+    let paste = paste_store.pastes.iter().find(|p| p.id == id).expect("paste should still exist");
+    assert_eq!(paste.hits, 0, "GET /paste/{{uuid}}/raw must not increment hits - only the preview page counts as a view");
+}
+
+#[tokio::test]
+async fn test_get_paste_raw_non_existent() {
+    let (app, _arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
+
+    let response = app
+        .oneshot(Request::builder().uri("/paste/123e4567-e89b-12d3-a456-426614174000/raw").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 404, "Expected 404 for non-existent paste");
 }
 
 #[tokio::test]
@@ -428,7 +492,7 @@ async fn test_post_paste_binary_preserves_file_name() {
     let id = Uuid::parse_str(str::from_utf8(&body).unwrap().trim_matches('"')).unwrap();
 
     let get_response = app
-        .oneshot(Request::builder().uri(&format!("/paste/{}", id)).body(Body::empty()).unwrap())
+        .oneshot(Request::builder().uri(&format!("/paste/{}/raw", id)).body(Body::empty()).unwrap())
         .await
         .unwrap();
 
@@ -453,7 +517,7 @@ async fn test_post_paste_binary_without_file_name_falls_back_to_uuid() {
     let id = Uuid::parse_str(str::from_utf8(&body).unwrap().trim_matches('"')).unwrap();
 
     let get_response = app
-        .oneshot(Request::builder().uri(&format!("/paste/{}", id)).body(Body::empty()).unwrap())
+        .oneshot(Request::builder().uri(&format!("/paste/{}/raw", id)).body(Body::empty()).unwrap())
         .await
         .unwrap();
 
@@ -479,7 +543,7 @@ async fn test_post_paste_binary_sanitizes_file_name() {
     let id = Uuid::parse_str(str::from_utf8(&body).unwrap().trim_matches('"')).unwrap();
 
     let get_response = app
-        .oneshot(Request::builder().uri(&format!("/paste/{}", id)).body(Body::empty()).unwrap())
+        .oneshot(Request::builder().uri(&format!("/paste/{}/raw", id)).body(Body::empty()).unwrap())
         .await
         .unwrap();
 

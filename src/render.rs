@@ -2,11 +2,12 @@ use axum::{response::Html, http::header, response::{IntoResponse, Response}};
 use mermaid_svg::render;
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd, html};
 use syntect::html::highlighted_html_for_string;
-use crate::model::{AppError, Paste, MimeKind};
+use crate::model::{self, AppError, Paste, MimeKind};
 use crate::store::StyleStore;
 
 const HOME_TEMPLATE: &str = include_str!("../templates/home.html");
 const MARKDOWN_TEMPLATE: &str = include_str!("../templates/markdown.html");
+const OCTET_STREAM_TEMPLATE: &str = include_str!("../templates/octet_stream.html");
 
 pub fn render_home_page(max_file_size: usize) -> Result<Html<String>, AppError> {
     let max_file_size_mb = max_file_size / (1024 * 1024);
@@ -39,19 +40,65 @@ pub fn render_paste_page(paste: &Paste, style_store: &StyleStore) -> Result<Resp
             ).into_response()
         }
 
-        MimeKind::OctetStream => {
-            let filename = paste.file_name.clone().unwrap_or_else(|| format!("{}.bin", paste.id));
-            (
-                [
-                    (header::CONTENT_TYPE, "application/octet-stream"),
-                    (header::CONTENT_DISPOSITION, &format!("attachment; filename=\"{}\"", filename))
-                ], paste.content.clone()
-            ).into_response()
-        }
-        
+        MimeKind::OctetStream => return render_octet_stream_page(paste),
+
     };
 
     Ok(response)
+}
+
+pub fn render_octet_stream_raw(paste: &Paste) -> Response {
+    let filename = paste.file_name.clone().unwrap_or_else(|| format!("{}.bin", paste.id));
+    (
+        [
+            (header::CONTENT_TYPE, "application/octet-stream"),
+            (header::CONTENT_DISPOSITION, &format!("attachment; filename=\"{}\"", filename))
+        ], paste.content.clone()
+    ).into_response()
+}
+
+fn render_octet_stream_page(paste: &Paste) -> Result<Response, AppError> {
+    let file_name = paste.file_name.clone().unwrap_or_else(|| format!("{}.bin", paste.id));
+    let raw_url = format!("/paste/{}/raw", paste.id);
+
+    let safe_file_name = html_escape(&file_name);
+
+    let preview_html = if model::is_image_file_name(&file_name) {
+        format!(r#"<img src="{}" alt="{}">"#, raw_url, safe_file_name)
+    } else {
+        String::from(r#"<p class="no-preview">No preview available for this file type.</p>"#)
+    };
+
+    let page = OCTET_STREAM_TEMPLATE
+        .replace("{{FILE_NAME}}", &safe_file_name)
+        .replace("{{FILE_SIZE}}", &format_file_size(paste.content.len()))
+        .replace("{{RAW_URL}}", &raw_url)
+        .replace("{{PREVIEW}}", &preview_html);
+
+    Ok(Html(page).into_response())
+}
+
+fn html_escape(input: &str) -> String {
+    input
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+fn format_file_size(bytes: usize) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = KB * 1024.0;
+    let bytes_f = bytes as f64;
+
+    if bytes_f >= MB {
+        format!("{:.2} MB", bytes_f / MB)
+    } else if bytes_f >= KB {
+        format!("{:.1} KB", bytes_f / KB)
+    } else {
+        format!("{} B", bytes)
+    }
 }
 
 fn transform_md (paste: &Paste, style_store: &StyleStore) -> Result<String, AppError> {
@@ -214,7 +261,7 @@ use super::*;
     }
 
     #[tokio::test]
-    async fn octet_stream() {
+    async fn octet_stream_raw() {
         let paste = Paste {
             id: Uuid::new_v4(),
             content: vec![0u8, 159, 146, 150, 1, 2, 3, 255],
@@ -224,8 +271,7 @@ use super::*;
             file_name: None,
         };
 
-        let style_store = StyleStore::new();
-        let response = render_paste_page(&paste, &style_store).expect("render_paste_page failed");
+        let response = render_octet_stream_raw(&paste);
 
         let content_type = response.headers().get(header::CONTENT_TYPE).expect("missing Content-Type").to_str().unwrap();
         assert_eq!(content_type, "application/octet-stream");
@@ -239,7 +285,24 @@ use super::*;
     }
 
     #[tokio::test]
-    async fn octet_stream_with_file_name() {
+    async fn octet_stream_raw_with_file_name() {
+        let paste = Paste {
+            id: Uuid::new_v4(),
+            content: vec![1, 2, 3, 4],
+            mimetype: MimeKind::OctetStream,
+            hits: 0,
+            last_seen_tick: 0,
+            file_name: Some("photo.png".to_string()),
+        };
+
+        let response = render_octet_stream_raw(&paste);
+
+        let content_disposition = response.headers().get(header::CONTENT_DISPOSITION).expect("missing Content-Disposition").to_str().unwrap();
+        assert_eq!(content_disposition, "attachment; filename=\"photo.png\"", "Content-Disposition should use the original file name when present");
+    }
+
+    #[tokio::test]
+    async fn octet_stream_page_shows_image_preview() {
         let paste = Paste {
             id: Uuid::new_v4(),
             content: vec![1, 2, 3, 4],
@@ -252,7 +315,58 @@ use super::*;
         let style_store = StyleStore::new();
         let response = render_paste_page(&paste, &style_store).expect("render_paste_page failed");
 
-        let content_disposition = response.headers().get(header::CONTENT_DISPOSITION).expect("missing Content-Disposition").to_str().unwrap();
-        assert_eq!(content_disposition, "attachment; filename=\"photo.png\"", "Content-Disposition should use the original file name when present");
+        let content_type = response.headers().get(header::CONTENT_TYPE).expect("missing Content-Type").to_str().unwrap();
+        assert_eq!(content_type, "text/html; charset=utf-8", "OctetStream page should be HTML, not the raw file");
+        assert!(response.headers().get(header::CONTENT_DISPOSITION).is_none(), "the preview page itself should not force a download");
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("failed to read body");
+        let body_str = String::from_utf8(body.to_vec()).unwrap();
+
+        let raw_url = format!("/paste/{}/raw", paste.id);
+        assert!(body_str.contains(&format!(r#"<img src="{}""#, raw_url)), "should embed an <img> pointing at the raw download URL");
+        assert!(body_str.contains("photo.png"), "should show the file name");
+        assert!(body_str.contains(&format!(r#"href="{}""#, raw_url)), "the download button should link to the raw URL");
+    }
+
+    #[tokio::test]
+    async fn octet_stream_page_falls_back_to_no_preview() {
+        let paste = Paste {
+            id: Uuid::new_v4(),
+            content: vec![1, 2, 3, 4],
+            mimetype: MimeKind::OctetStream,
+            hits: 0,
+            last_seen_tick: 0,
+            file_name: Some("archive.zip".to_string()),
+        };
+
+        let style_store = StyleStore::new();
+        let response = render_paste_page(&paste, &style_store).expect("render_paste_page failed");
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("failed to read body");
+        let body_str = String::from_utf8(body.to_vec()).unwrap();
+
+        assert!(!body_str.contains("<img"), "non-image files should not get an <img> preview");
+        assert!(body_str.contains("No preview available"), "should show the no-preview fallback message");
+    }
+
+    #[tokio::test]
+    async fn octet_stream_page_escapes_file_name() {
+        let paste = Paste {
+            id: Uuid::new_v4(),
+            content: vec![1, 2, 3, 4],
+            mimetype: MimeKind::OctetStream,
+            hits: 0,
+            last_seen_tick: 0,
+            file_name: Some("<script>alert(1)</script>.png".to_string()),
+        };
+
+        let style_store = StyleStore::new();
+        let response = render_paste_page(&paste, &style_store).expect("render_paste_page failed");
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("failed to read body");
+        let body_str = String::from_utf8(body.to_vec()).unwrap();
+
+        assert!(!body_str.contains("<script>"), "file name must be HTML-escaped, not injected raw into the page");
+        assert!(body_str.contains("&lt;script&gt;"), "escaped file name should still be visible as text");
     }
 }

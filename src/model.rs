@@ -64,6 +64,15 @@ pub fn sanitize_file_name(name: &str) -> Option<String> {
     }
 }
 
+const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico"];
+
+pub fn is_image_file_name(file_name: &str) -> bool {
+    match file_name.rsplit_once('.') {
+        Some((_, ext)) => IMAGE_EXTENSIONS.contains(&ext.to_lowercase().as_str()),
+        None => false,
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
 pub enum MimeKind {
     PlainText,

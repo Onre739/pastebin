@@ -85,7 +85,7 @@ impl PastebinMcp {
 
         let content = match paste.mimetype {
             MimeKind::OctetStream => {
-                format!("binary content, {} bytes (cannot be displayed as text; use an HTTP client against GET /paste/{{uuid}} to download it)", paste.content.len())
+                format!("binary content, {} bytes (cannot be displayed as text; use an HTTP client against GET /paste/{{uuid}}/raw to download it)", paste.content.len())
             }
             _ => String::from_utf8_lossy(&paste.content).into_owned(),
         };
