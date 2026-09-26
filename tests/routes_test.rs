@@ -311,7 +311,7 @@ async fn test_get_paste_plain_text() {
     assert_eq!(response.status(), 200, "Expected 200 OK for existing paste");
 
     let content_type = response.headers().get(header::CONTENT_TYPE).expect("missing Content-Type").to_str().unwrap();
-    assert_eq!(content_type, "text/plain; charset=utf-8");
+    assert_eq!(content_type, "text/html; charset=utf-8", "PlainText should now be wrapped in an HTML page, not served as text/plain");
 
     let body = body::to_bytes(response.into_body(), usize::MAX)
         .await

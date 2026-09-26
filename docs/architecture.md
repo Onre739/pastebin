@@ -65,7 +65,7 @@ flowchart TB
         Model["model.rs<br/>Paste, MimeKind, AppError"]
     end
 
-    Templates[["templates/home.html<br/>(zakompilováno přes include_str!)"]]
+    Templates[["templates/*.html<br/>(zakompilováno přes include_str!)"]]
 
     Main --> Store
     Main --> Routes
@@ -92,6 +92,7 @@ Vlastnosti tohoto grafu, ověřené proti importům v kódu:
 - **`routes.rs` má tři různé způsoby, jak z requestu dostat `content`** — `Json<CreatePasteDto>`, `Form<CreatePasteDto>` a (pro `POST /paste/binary`) přímo `axum::body::Bytes`, beze zprostředkujícího DTO typu. Poslední cesta je jediná, která obchází `String`/UTF-8 a podporuje skutečně libovolná binární data (viz [ADR 0007](./adr/0007-dedicated-binary-endpoint.md)). Volba mimetype/limitu se pak i tak řeší jen v `store.rs` (`PasteStore::insert` → `max_content_size`), `routes.rs` nikde sám nerozhoduje, jaký limit platí.
 - **`post_paste_binary` čte metadata (název souboru) mimo tělo requestu** — `Bytes` extraktor vezme jen tělo, takže původní název souboru se posílá vedle, v hlavičce `X-File-Name-B64` (base64, protože hlavičky jsou ASCII-only, ale název souboru může být libovolný Unicode). `model::sanitize_file_name` sjednocuje čištění vstupu mezi touto HTTP cestou a MCP nástrojem `create_binary_paste` (viz [ADR 0009](./adr/0009-original-file-name-preservation.md)).
 - **`GET /paste/{uuid}/raw` je jediná route, která čte `PasteStore` přes `get` (read-only), ne `record_view`** — `render::render_octet_stream_raw` servíruje syrová binární data `OctetStream` pastu jako download/`<img>` zdroj, ale nesmí se počítat jako druhé "zobrazení" nad rámec toho, co už zaznamenala hlavní stránka (viz [ADR 0011](./adr/0011-octet-stream-preview-page.md)). `render_paste_page` zůstala jediná funkce s matchem přes všechny 4 `MimeKind` (pro `OctetStream` vrací HTML náhled, ne bajty) — `render_octet_stream_raw` je záměrně samostatná, ne další match arm, protože ji potřebuje jen `/raw`, nikoli hlavní stránka.
+- **`render::html_escape` má dvě volající místa se stejným důvodem** — `render_octet_stream_page` (pro `file_name`) i `render_plain_text_page` (pro obsah pastu) escapují uživatelem kontrolovaná data těsně před vložením do HTML šablony (viz [ADR 0011](./adr/0011-octet-stream-preview-page.md), [ADR 0012](./adr/0012-plain-text-html-page.md)). `MimeKind::Html` je jediný typ, kde se escapování záměrně nedělá (NFR-7/NFR-9) — u něj je "beze změny" explicitní požadavek, ne opomenutí.
 
 ## 4. Vlastnictví stavu (ownership)
 
@@ -136,3 +137,4 @@ flowchart TB
 | [0009](./adr/0009-original-file-name-preservation.md) | Zachování původního názvu souboru (`Paste.file_name`, hlavička `X-File-Name-B64`, MCP `file_name` argument) a frontend fallback po vytvoření `OctetStream` pastu | Accepted |
 | [0010](./adr/0010-github-actions-ci-docker-image.md) | CI/CD přes GitHub Actions (build+test na push/PR, Docker image na push do `main`) a publikace do GHCR, bez `docker-compose.yml` | Accepted |
 | [0011](./adr/0011-octet-stream-preview-page.md) | Náhledová HTML stránka pro `OctetStream` (`GET /paste/{uuid}`) oddělená od syrových bajtů (`GET /paste/{uuid}/raw`), read-only `PasteStore::get`, escapování `file_name` v HTML | Accepted |
+| [0012](./adr/0012-plain-text-html-page.md) | `PlainText` se zobrazuje jako HTML stránka (`templates/plain_text.html`), obsah escapovaný přes `render::html_escape`, bez `/raw` endpointu | Accepted |

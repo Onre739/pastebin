@@ -8,6 +8,7 @@ use crate::store::StyleStore;
 const HOME_TEMPLATE: &str = include_str!("../templates/home.html");
 const MARKDOWN_TEMPLATE: &str = include_str!("../templates/markdown.html");
 const OCTET_STREAM_TEMPLATE: &str = include_str!("../templates/octet_stream.html");
+const PLAIN_TEXT_TEMPLATE: &str = include_str!("../templates/plain_text.html");
 
 pub fn render_home_page(max_file_size: usize) -> Result<Html<String>, AppError> {
     let max_file_size_mb = max_file_size / (1024 * 1024);
@@ -18,11 +19,7 @@ pub fn render_home_page(max_file_size: usize) -> Result<Html<String>, AppError> 
 pub fn render_paste_page(paste: &Paste, style_store: &StyleStore) -> Result<Response, AppError> {
     let response = match paste.mimetype {
 
-        MimeKind::PlainText => {
-            ([(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
-                paste.content.clone()
-            ).into_response()
-        }
+        MimeKind::PlainText => return render_plain_text_page(paste),
 
         MimeKind::Html => {
             ([(header::CONTENT_TYPE, "text/html; charset=utf-8")],
@@ -55,6 +52,13 @@ pub fn render_octet_stream_raw(paste: &Paste) -> Response {
             (header::CONTENT_DISPOSITION, &format!("attachment; filename=\"{}\"", filename))
         ], paste.content.clone()
     ).into_response()
+}
+
+fn render_plain_text_page(paste: &Paste) -> Result<Response, AppError> {
+    let text = String::from_utf8(paste.content.clone()).map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let page = PLAIN_TEXT_TEMPLATE.replace("{{CONTENT}}", &html_escape(&text));
+
+    Ok(Html(page).into_response())
 }
 
 fn render_octet_stream_page(paste: &Paste) -> Result<Response, AppError> {
@@ -254,10 +258,32 @@ use super::*;
         let response = render_paste_page(&paste, &style_store).expect("render_paste_page failed");
 
         let content_type = response.headers().get(header::CONTENT_TYPE).expect("missing Content-Type").to_str().unwrap();
-        assert_eq!(content_type, "text/plain; charset=utf-8");
+        assert_eq!(content_type, "text/html; charset=utf-8", "PlainText should now be wrapped in an HTML page, not served as text/plain");
 
         let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("failed to read body");
-        assert_eq!(body.as_ref(), paste.content.as_slice(), "PlainText body should pass through unchanged");
+        let body_str = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body_str.contains("Hello, World!"), "page should contain the paste content");
+    }
+
+    #[tokio::test]
+    async fn plain_text_escapes_content() {
+        let paste = Paste {
+            id: Uuid::new_v4(),
+            content: b"<script>alert(1)</script>".to_vec(),
+            mimetype: MimeKind::PlainText,
+            hits: 0,
+            last_seen_tick: 0,
+            file_name: None,
+        };
+
+        let style_store = StyleStore::new();
+        let response = render_paste_page(&paste, &style_store).expect("render_paste_page failed");
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("failed to read body");
+        let body_str = String::from_utf8(body.to_vec()).unwrap();
+
+        assert!(!body_str.contains("<script>"), "paste content must be HTML-escaped, not injected raw into the page");
+        assert!(body_str.contains("&lt;script&gt;"), "escaped content should still be visible as text");
     }
 
     #[tokio::test]
