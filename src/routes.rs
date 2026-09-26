@@ -88,5 +88,5 @@ async fn get_paste_raw(Path(uuid): Path<Uuid>, State(state): State<AppState>)
 
     // Use the read-only `get` method to avoid incrementing hits/last_seen_tick for raw fetches.
     let paste = paste_store.get(uuid)?;
-    Ok(render::render_octet_stream_raw(paste))
+    render::render_raw_content(paste)
 }

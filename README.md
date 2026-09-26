@@ -14,7 +14,7 @@ Podrobný popis požadavků a architektury:
 - Zachování původního názvu souboru u binárních pastů — `Content-Disposition` při stažení použije skutečný název (např. `photo.png`), ne generický `{uuid}.bin` (viz [ADR 0009](docs/adr/0009-original-file-name-preservation.md))
 - Náhledová stránka pro binární pasty (`GET /paste/{uuid}`) — jméno souboru, velikost, a pro rozpoznané obrázkové přípony inline náhled; syrová data (stažení) jsou na `GET /paste/{uuid}/raw`, které se nepočítá jako zobrazení (viz [ADR 0011](docs/adr/0011-octet-stream-preview-page.md))
 - Zobrazení pastu podle UUID (`GET /paste/{uuid}`), 404 pro neexistující/evikovaný paste
-- Renderování podle typu obsahu (`PlainText`, `Html`, `Markdown`, `OctetStream`) — `PlainText` i `Markdown`/`OctetStream` mají vlastní tmavou HTML šablonu; jen `Html` se vrací beze změny (viz Omezení). Obsah/metadata vkládaná do těchto šablon (text pastu, název souboru) jsou escapovaná, aby paste nemohl spustit vlastní JS v prohlížeči diváka (viz [ADR 0011](docs/adr/0011-octet-stream-preview-page.md), [ADR 0012](docs/adr/0012-plain-text-html-page.md))
+- Renderování podle typu obsahu (`PlainText`, `Html`, `Markdown`, `OctetStream`) — každý typ má vlastní tmavou HTML šablonu s odkazem zpět na domovskou stránku. `Html` je obalený v `<iframe>` (obsah beze změny, bez sanitizace, viz Omezení) — `<iframe>` je stejná origin jako zbytek aplikace, takže nedává žádnou skutečnou bezpečnostní izolaci, jen vizuální oddělení (viz [ADR 0013](docs/adr/0013-html-iframe-wrapper.md)). Obsah/metadata vkládaná přímo do ostatních šablon (text pastu, název souboru) jsou escapovaná, aby paste nemohl spustit vlastní JS v prohlížeči diváka (viz [ADR 0011](docs/adr/0011-octet-stream-preview-page.md), [ADR 0012](docs/adr/0012-plain-text-html-page.md))
 - Markdown → HTML (`pulldown-cmark`), zvýraznění syntaxe v blocích kódu (`syntect`, tmavé téma), bloky ```mermaid``` renderované na SVG (`mermaid-svg`) — výstup je obalený do stejné tmavé šablony jako homepage
 - Countdown LRU evikce při naplnění kapacity
 - Validace vstupu (prázdný obsah, příliš velký payload, neplatný mimetype) — textové pasty a binární soubory mají oddělený limit velikosti
@@ -97,6 +97,7 @@ templates/    - statické HTML šablony (zakompilované přes include_str!)
   markdown.html     - stránka pro vyrenderovaný markdown, stejný vzhled jako home.html
   plain_text.html   - stránka pro PlainText pasty (obsah v <pre>, escapovaný)
   octet_stream.html - náhledová stránka pro binární pasty (jméno, velikost, obrázkový náhled/download)
+  html_page.html    - stránka pro Html pasty (<iframe> na /raw, pevná výška)
 tests/        - integrační testy nad HTTP vrstvou
 docs/         - požadavky, architektura, ADR
 .github/workflows/ - CI/CD pipeline (GitHub Actions)

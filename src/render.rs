@@ -9,6 +9,7 @@ const HOME_TEMPLATE: &str = include_str!("../templates/home.html");
 const MARKDOWN_TEMPLATE: &str = include_str!("../templates/markdown.html");
 const OCTET_STREAM_TEMPLATE: &str = include_str!("../templates/octet_stream.html");
 const PLAIN_TEXT_TEMPLATE: &str = include_str!("../templates/plain_text.html");
+const HTML_PAGE_TEMPLATE: &str = include_str!("../templates/html_page.html");
 
 pub fn render_home_page(max_file_size: usize) -> Result<Html<String>, AppError> {
     let max_file_size_mb = max_file_size / (1024 * 1024);
@@ -17,34 +18,23 @@ pub fn render_home_page(max_file_size: usize) -> Result<Html<String>, AppError> 
 }
 
 pub fn render_paste_page(paste: &Paste, style_store: &StyleStore) -> Result<Response, AppError> {
-    let response = match paste.mimetype {
-
-        MimeKind::PlainText => return render_plain_text_page(paste),
-
-        MimeKind::Html => {
-            ([(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-                Html(paste.content.clone())
-            ).into_response()
-        }
-
-        MimeKind::Markdown => {
-
-            let html_output = transform_md(&paste, &style_store)?;
-            let page = MARKDOWN_TEMPLATE.replace("{{CONTENT}}", &html_output);
-
-            ([(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-                Html(page)
-            ).into_response()
-        }
-
-        MimeKind::OctetStream => return render_octet_stream_page(paste),
-
-    };
-
-    Ok(response)
+    match paste.mimetype {
+        MimeKind::PlainText => render_plain_text_page(paste),
+        MimeKind::Html => render_html_page(paste),
+        MimeKind::Markdown => render_markdown_page(paste, style_store),
+        MimeKind::OctetStream => render_octet_stream_page(paste),
+    }
 }
 
-pub fn render_octet_stream_raw(paste: &Paste) -> Response {
+pub fn render_raw_content(paste: &Paste) -> Result<Response, AppError> {
+    match paste.mimetype {
+        MimeKind::OctetStream => Ok(render_octet_stream_raw(paste)),
+        MimeKind::Html => Ok(render_html_raw(paste)),
+        MimeKind::PlainText | MimeKind::Markdown => Err(AppError::NotFound),
+    }
+}
+
+fn render_octet_stream_raw(paste: &Paste) -> Response {
     let filename = paste.file_name.clone().unwrap_or_else(|| format!("{}.bin", paste.id));
     (
         [
@@ -52,6 +42,26 @@ pub fn render_octet_stream_raw(paste: &Paste) -> Response {
             (header::CONTENT_DISPOSITION, &format!("attachment; filename=\"{}\"", filename))
         ], paste.content.clone()
     ).into_response()
+}
+
+fn render_html_raw(paste: &Paste) -> Response {
+    ([(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        Html(paste.content.clone())
+    ).into_response()
+}
+
+fn render_html_page(paste: &Paste) -> Result<Response, AppError> {
+    let raw_url = format!("/paste/{}/raw", paste.id);
+    let page = HTML_PAGE_TEMPLATE.replace("{{RAW_URL}}", &raw_url);
+
+    Ok(Html(page).into_response())
+}
+
+fn render_markdown_page(paste: &Paste, style_store: &StyleStore) -> Result<Response, AppError> {
+    let html_output = transform_md(paste, style_store)?;
+    let page = MARKDOWN_TEMPLATE.replace("{{CONTENT}}", &html_output);
+
+    Ok(Html(page).into_response())
 }
 
 fn render_plain_text_page(paste: &Paste) -> Result<Response, AppError> {
@@ -284,6 +294,76 @@ use super::*;
 
         assert!(!body_str.contains("<script>"), "paste content must be HTML-escaped, not injected raw into the page");
         assert!(body_str.contains("&lt;script&gt;"), "escaped content should still be visible as text");
+    }
+
+    #[tokio::test]
+    async fn html_page_embeds_iframe_to_raw() {
+        let paste = Paste {
+            id: Uuid::new_v4(),
+            content: b"<b>Hello, World!</b><script>alert(1)</script>".to_vec(),
+            mimetype: MimeKind::Html,
+            hits: 0,
+            last_seen_tick: 0,
+            file_name: None,
+        };
+
+        let style_store = StyleStore::new();
+        let response = render_paste_page(&paste, &style_store).expect("render_paste_page failed");
+
+        let content_type = response.headers().get(header::CONTENT_TYPE).expect("missing Content-Type").to_str().unwrap();
+        assert_eq!(content_type, "text/html; charset=utf-8");
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("failed to read body");
+        let body_str = String::from_utf8(body.to_vec()).unwrap();
+
+        let raw_url = format!("/paste/{}/raw", paste.id);
+        assert!(body_str.contains(&format!(r#"src="{}""#, raw_url)), "should embed an <iframe> pointing at the raw URL");
+        // The page itself must not contain the paste's own markup/script directly -
+        // it's only ever loaded inside the iframe, from a separate request to /raw.
+        assert!(!body_str.contains("<b>Hello, World!</b>"), "the wrapper page must not inline the paste's own HTML");
+    }
+
+    #[tokio::test]
+    async fn html_raw_is_unchanged() {
+        let paste = Paste {
+            id: Uuid::new_v4(),
+            content: b"<b>Hello, World!</b><script>alert(1)</script>".to_vec(),
+            mimetype: MimeKind::Html,
+            hits: 0,
+            last_seen_tick: 0,
+            file_name: None,
+        };
+
+        let response = render_raw_content(&paste).expect("render_raw_content failed");
+
+        let content_type = response.headers().get(header::CONTENT_TYPE).expect("missing Content-Type").to_str().unwrap();
+        assert_eq!(content_type, "text/html; charset=utf-8");
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.expect("failed to read body");
+        assert_eq!(body.as_ref(), paste.content.as_slice(), "Html body should pass through /raw unchanged, script tag included - no sanitization (NFR-7)");
+    }
+
+    #[test]
+    fn raw_content_not_available_for_plain_text_or_markdown() {
+        let plain = Paste {
+            id: Uuid::new_v4(),
+            content: b"hello".to_vec(),
+            mimetype: MimeKind::PlainText,
+            hits: 0,
+            last_seen_tick: 0,
+            file_name: None,
+        };
+        assert!(matches!(render_raw_content(&plain), Err(AppError::NotFound)));
+
+        let markdown = Paste {
+            id: Uuid::new_v4(),
+            content: b"# hello".to_vec(),
+            mimetype: MimeKind::Markdown,
+            hits: 0,
+            last_seen_tick: 0,
+            file_name: None,
+        };
+        assert!(matches!(render_raw_content(&markdown), Err(AppError::NotFound)));
     }
 
     #[tokio::test]

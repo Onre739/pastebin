@@ -323,7 +323,7 @@ async fn test_get_paste_plain_text() {
 }
 
 #[tokio::test]
-async fn test_get_paste_html() {
+async fn test_get_paste_html_shows_iframe_wrapper() {
     let (app, arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
 
     let mut paste_store = arc_paste_store.lock().unwrap();
@@ -346,7 +346,48 @@ async fn test_get_paste_html() {
     let body_str = str::from_utf8(&body)
         .expect("response body should be valid UTF-8");
 
-    assert!(body_str.contains("<b>Hello, World!</b>"), "Response body should contain the raw HTML content unchanged");
+    assert!(body_str.contains(&format!("/paste/{}/raw", id)), "wrapper page should embed an <iframe> pointing at the raw URL");
+    assert!(!body_str.contains("<b>Hello, World!</b>"), "wrapper page must not inline the paste's own HTML directly");
+}
+
+#[tokio::test]
+async fn test_get_paste_raw_html_is_unchanged() {
+    let (app, arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
+
+    let mut paste_store = arc_paste_store.lock().unwrap();
+    let id = paste_store.insert(b"<b>Hello, World!</b>".to_vec(), model::MimeKind::Html, None).expect("Insert failed");
+    drop(paste_store);
+
+    let response = app
+        .oneshot(Request::builder().uri(&format!("/paste/{}/raw", id)).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+
+    let content_type = response.headers().get(header::CONTENT_TYPE).expect("missing Content-Type").to_str().unwrap();
+    assert_eq!(content_type, "text/html; charset=utf-8");
+
+    let body = body::to_bytes(response.into_body(), usize::MAX).await.expect("failed to read response body");
+    let body_str = str::from_utf8(&body).expect("response body should be valid UTF-8");
+
+    assert_eq!(body_str, "<b>Hello, World!</b>", "Response body should contain the raw HTML content unchanged, no sanitization (NFR-7)");
+}
+
+#[tokio::test]
+async fn test_get_paste_raw_not_available_for_plain_text() {
+    let (app, arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
+
+    let mut paste_store = arc_paste_store.lock().unwrap();
+    let id = paste_store.insert(b"Hello, World!".to_vec(), model::MimeKind::PlainText, None).expect("Insert failed");
+    drop(paste_store);
+
+    let response = app
+        .oneshot(Request::builder().uri(&format!("/paste/{}/raw", id)).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 404, "PlainText has no distinct raw form - /raw should 404, not fall back to some other content type");
 }
 
 #[tokio::test]
