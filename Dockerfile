@@ -30,6 +30,8 @@ USER appuser
 # src/main.rs) - this is metadata for tools like `docker inspect`, not a
 # guarantee. Required env vars: URL, PORT, MAX_PASTES, MAX_PASTE_SIZE,
 # MAX_FILE_SIZE (the app panics at startup if any is missing/invalid).
+# Optional: MCP_ALLOWED_HOSTS - comma-separated public hostnames accepted by
+# POST /mcp (rmcp rejects non-loopback Host headers with 403 otherwise).
 EXPOSE 3000
 
 ENTRYPOINT ["./pastebin"]

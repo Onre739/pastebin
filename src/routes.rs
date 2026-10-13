@@ -15,14 +15,14 @@ pub struct CreatePasteDto {
     pub mimetype: MimeKind,
 }
 
-pub fn create_router(state: AppState) -> Router {
+pub fn create_router(state: AppState, mcp_hosts: &[String]) -> Router {
     let (max_paste_size, max_file_size) = {
         let paste_store = state.paste_store.lock().unwrap();
         (paste_store.max_paste_size, paste_store.max_file_size)
     };
     
     let max_body_size = max_paste_size.max(max_file_size);
-    let mcp_service = mcp_service(state.clone());
+    let mcp_service = mcp_service(state.clone(), mcp_hosts.to_vec());
 
     let app = Router::new()
         .route("/", get(get_home))

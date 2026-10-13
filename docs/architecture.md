@@ -13,7 +13,7 @@ flowchart LR
 
     Pastebin["Pastebin server<br/>[Software System]<br/>Vytváří, ukládá a zobrazuje<br/>textové/binární pasty s LRU evikcí"]
 
-    EnvFile[["Soubor .env<br/>[Konfigurace]<br/>PORT, URL, MAX_PASTES,<br/>MAX_PASTE_SIZE"]]
+    EnvFile[["Soubor .env<br/>[Konfigurace]<br/>PORT, URL, MAX_PASTES,<br/>MAX_PASTE_SIZE, MAX_FILE_SIZE,<br/>MCP_ALLOWED_HOSTS"]]
 
     User -- "HTTP GET/POST<br/>(vytvoření, zobrazení pastu)" --> Pastebin
     McpClient -- "MCP (JSON-RPC přes<br/>Streamable HTTP), POST /mcp" --> Pastebin
@@ -114,6 +114,7 @@ flowchart TB
 - `AppState` je `Clone` (klonuje se jen `Arc`, ne data uvnitř) a předává se do axum přes `State<AppState>` — každý handler dostane vlastní kopii dvou `Arc` ukazatelů, ne kopii dat.
 - `PasteStore` je jediná mutable sdílená struktura v aplikaci — chráněná `std::sync::Mutex`. Veškerý zápis (vytvoření pastu, evikce, `record_view`) prochází výhradně přes tento jeden zámek — bez ohledu na to, jestli přišel z `routes.rs`, nebo z `mcp.rs`.
 - `StyleStore` je po konstrukci (`StyleStore::new()` v `main.rs`) neměnný — `SyntaxSet`/`ThemeSet` se načtou jednou při startu a dál se jen čtou. Proto je zabalený jen v `Arc`, bez `Mutex` — nesdílí zámek s `PasteStore`, takže renderování (potenciálně pomalejší operace — parsování markdownu, syntax highlighting, generování SVG) neblokuje zápisy/čtení do `PasteStore` a naopak.
+- Seznam povolených hostů pro MCP (`MCP_ALLOWED_HOSTS` + loopback adresy) **není** součástí `AppState`. `main.rs` ho sestaví při startu a předá parametrem `routes::create_router(state, &mcp_hosts)` → `mcp::mcp_service(state, allowed_hosts)`, kde skončí v `StreamableHttpServerConfig` (`with_allowed_hosts`). Je to konfigurace pro start, kterou za běhu žádný handler nečte — viz [ADR 0014](./adr/0014-mcp-allowed-hosts.md).
 - `PastebinMcp` (v `mcp.rs`) drží vlastní pole `state: AppState` — tedy stejné dva `Arc` ukazatele jako `routes.rs`, ne kopii dat ani oddělený stav. `mcp_service` vytváří novou instanci `PastebinMcp` pro každou MCP session přes factory closure (`move || Ok(PastebinMcp::new(state.clone()))`), ale protože klonování `AppState` je jen klonování dvou `Arc`, všechny instance napříč všemi sezeními pořád ukazují na ten samý `PasteStore`/`StyleStore`.
 
 ## 5. Souběžnost
@@ -140,3 +141,4 @@ flowchart TB
 | [0011](./adr/0011-octet-stream-preview-page.md) | Náhledová HTML stránka pro `OctetStream` (`GET /paste/{uuid}`) oddělená od syrových bajtů (`GET /paste/{uuid}/raw`), read-only `PasteStore::get`, escapování `file_name` v HTML | Accepted |
 | [0012](./adr/0012-plain-text-html-page.md) | `PlainText` se zobrazuje jako HTML stránka (`templates/plain_text.html`), obsah escapovaný přes `render::html_escape`, bez `/raw` endpointu | Accepted |
 | [0013](./adr/0013-html-iframe-wrapper.md) | `Html` dostal iframe wrapper (`templates/html_page.html`, pevná výška), `/raw` zobecněný pro `Html`, tlačítko zpět ve všech čtyřech šablonách, `render_paste_page` jako čistý dispatch | Accepted |
+| [0014](./adr/0014-mcp-allowed-hosts.md) | Konfigurovatelné povolené hosty pro MCP (`MCP_ALLOWED_HOSTS`, kontrola hlavičky `Host` v `rmcp` zůstává zapnutá), předávané parametrem `create_router`/`mcp_service`, ne přes `AppState` | Accepted |

@@ -4,6 +4,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{ServerCapabilities, ServerInfo};
+use rmcp::transport::StreamableHttpServerConfig;
 use rmcp::{ServerHandler, tool, tool_handler, tool_router};
 use rmcp::transport::streamable_http_server::{
     StreamableHttpService,
@@ -105,10 +106,10 @@ impl ServerHandler for PastebinMcp {
 }
 
 /// Builds the tower service exposing the MCP server on a single Streamable HTTP endpoint.
-pub fn mcp_service(state: AppState) -> StreamableHttpService<PastebinMcp, LocalSessionManager> {
+pub fn mcp_service(state: AppState, allowed_hosts: Vec<String>) -> StreamableHttpService<PastebinMcp, LocalSessionManager> {
     StreamableHttpService::new(
         move || Ok(PastebinMcp::new(state.clone())),
         Arc::new(LocalSessionManager::default()),
-        Default::default(),
+        StreamableHttpServerConfig::default().with_allowed_hosts(allowed_hosts),
     )
 }

@@ -29,6 +29,10 @@ Dostupné nástroje:
 - `create_binary_paste(content_base64, file_name?)` — vytvoří nový paste typu `OctetStream` z base64 zakódovaného obsahu; MCP obdoba `POST /paste/binary` — JSON-RPC neumí přenést syrové bajty, takže base64 je jediná cesta, jak binární data protlačit přes MCP tool call (stejný vzor používá i MCP specifikace pro binární content bloky). Nepovinný `file_name` se uloží a použije v `Content-Disposition` při stažení pastu.
 - `get_paste(id)` — zobrazí paste podle UUID; má stejný vedlejší efekt jako běžné zobrazení (`hits`/`last_seen_tick` se aktualizují). Textový obsah se vrací surový (u `Markdown` tedy zdrojový text, ne vyrenderované HTML), binární (`OctetStream`) obsah se jen popíše velikostí s odkazem na `GET /paste/{uuid}/raw` — čtení binárních dat zpátky přes MCP zatím není řešeno (viz `docs/requirements.md`, otevřené otázky)
 
+### Povolené hosty (`MCP_ALLOWED_HOSTS`)
+
+`rmcp` kontroluje hlavičku `Host` jako ochranu proti DNS rebindingu. Bez další konfigurace `/mcp` přijímá jen `localhost`, `127.0.0.1` a `::1`; request s jiným hostem dostane `403 Forbidden: Host header is not allowed` (běžných HTTP endpointů se to netýká). Při nasazení na veřejnou doménu je proto potřeba nastavit `MCP_ALLOWED_HOSTS` (viz [Konfigurace](#konfigurace)). Položka bez portu (`paste.example.com`) povolí jakýkoli port, položka s portem (`paste.example.com:8443`) jen ten jeden. Za reverse proxy rozhoduje hlavička `Host`, která dorazí do aplikace — pokud ji proxy zachovává, musí být v seznamu veřejný hostname. Podrobnosti viz [ADR 0014](docs/adr/0014-mcp-allowed-hosts.md).
+
 ## Spuštění
 
 ```
@@ -39,7 +43,7 @@ Server naslouchá na adrese a portu z `.env` (výchozí `http://127.0.0.1:3000`)
 
 ## Konfigurace
 
-Konfigurace se čte z `.env` v kořeni projektu při startu — všechny proměnné jsou povinné, jejich chybějící hodnota nebo neplatný formát způsobí pád aplikace hned při startu s chybovou hláškou.
+Konfigurace se čte z `.env` v kořeni projektu při startu — všechny proměnné kromě `MCP_ALLOWED_HOSTS` jsou povinné, jejich chybějící hodnota nebo neplatný formát způsobí pád aplikace hned při startu s chybovou hláškou.
 
 | Proměnná | Význam | Aktuální hodnota |
 |---|---|---|
@@ -48,6 +52,7 @@ Konfigurace se čte z `.env` v kořeni projektu při startu — všechny proměn
 | `MAX_PASTES` | Maximální počet pastů držených současně; po dosažení limitu se spustí countdown LRU evikce | `100` |
 | `MAX_PASTE_SIZE` | Maximální velikost textového obsahu (`PlainText`, `Html`, `Markdown`) v bajtech | `1048576` (1 MiB) |
 | `MAX_FILE_SIZE` | Maximální velikost binárního souboru (`OctetStream`, nahrávaného přes `POST /paste/binary`) v bajtech | `20971520` (20 MiB) |
+| `MCP_ALLOWED_HOSTS` | Nepovinné. Další hosty oddělené čárkami, které `POST /mcp` přijme v hlavičce `Host` (k výchozím `localhost`, `127.0.0.1`, `::1`), viz [Povolené hosty](#povolené-hosty-mcp_allowed_hosts) | nenastaveno |
 
 ## Testování
 
@@ -55,7 +60,7 @@ Konfigurace se čte z `.env` v kořeni projektu při startu — všechny proměn
 cargo test
 ```
 
-Spustí unit testy (`src/store.rs`, `src/render.rs`) i integrační testy (`tests/routes_test.rs`) — dohromady pokrývají hraniční případy LRU evikce, rendering všech typů obsahu, HTTP vrstvu včetně chybových stavů a oddělené limity velikosti pro text/binární obsah.
+Spustí unit testy (`src/store.rs`, `src/render.rs`) i integrační testy (`tests/routes_test.rs`) — dohromady pokrývají hraniční případy LRU evikce, rendering všech typů obsahu, HTTP vrstvu včetně chybových stavů, oddělené limity velikosti pro text/binární obsah a kontrolu hlavičky `Host` na `POST /mcp`.
 
 ## CI/CD
 
@@ -76,10 +81,11 @@ docker run --rm -p 3000:3000 \
   -e MAX_PASTES=100 \
   -e MAX_PASTE_SIZE=1048576 \
   -e MAX_FILE_SIZE=20971520 \
+  -e MCP_ALLOWED_HOSTS=paste.example.com \
   pastebin
 ```
 
-Image (`Dockerfile`, multi-stage build) obsahuje jen zkompilovanou binárku, žádný Rust toolchain ani `.env` soubor — všech 5 proměnných z [Konfigurace](#konfigurace) je proto nutné předat přes `-e`/`--env-file`, jinak aplikace při startu hned panicne. `URL` musí být uvnitř kontejneru `0.0.0.0`, ne `127.0.0.1` (viz sekce Konfigurace) — jinak server naslouchá jen sám sobě a `-p` mapování portu se nepropojí.
+Image (`Dockerfile`, multi-stage build) obsahuje jen zkompilovanou binárku, žádný Rust toolchain ani `.env` soubor — všech 5 povinných proměnných z [Konfigurace](#konfigurace) je proto nutné předat přes `-e`/`--env-file`, jinak aplikace při startu hned panicne. `MCP_ALLOWED_HOSTS` je nepovinná, ale bez ní MCP odpoví `403` na každý request přes veřejnou doménu. `URL` musí být uvnitř kontejneru `0.0.0.0`, ne `127.0.0.1` (viz sekce Konfigurace) — jinak server naslouchá jen sám sobě a `-p` mapování portu se nepropojí.
 
 ## Struktura projektu
 

@@ -7,12 +7,30 @@ use uuid::Uuid;
 use pastebin::{model, routes::create_router, store::AppState, store::PasteStore, store::StyleStore};
 
 fn create_state(max_pastes: usize, max_paste_size: usize, max_file_size: usize) -> (axum::Router, Arc<Mutex<PasteStore>>) {
+    create_state_with_mcp_hosts(max_pastes, max_paste_size, max_file_size, &[])
+}
+
+fn create_state_with_mcp_hosts(max_pastes: usize, max_paste_size: usize, max_file_size: usize, extra_mcp_hosts: &[&str]) -> (axum::Router, Arc<Mutex<PasteStore>>) {
     let paste_store = Arc::new(Mutex::new(PasteStore::new(max_pastes, max_paste_size, max_file_size)));
     let style_store = Arc::new(StyleStore::new());
 
+    let mut mcp_hosts = vec!["localhost".to_string(), "127.0.0.1".into(), "::1".into()];
+    mcp_hosts.extend(extra_mcp_hosts.iter().map(|h| h.to_string()));
+
     let state = AppState { paste_store: paste_store.clone(), style_store };
-    let app = create_router(state);
+    let app = create_router(state, &mcp_hosts);
     (app, paste_store)
+}
+
+fn mcp_initialize_request(host: &str) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri("/mcp")
+        .header(header::HOST, host)
+        .header("content-type", "application/json")
+        .header("accept", "application/json, text/event-stream")
+        .body(Body::from(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#))
+        .unwrap()
 }
 
 #[tokio::test]
@@ -590,4 +608,42 @@ async fn test_post_paste_binary_sanitizes_file_name() {
 
     let content_disposition = get_response.headers().get(header::CONTENT_DISPOSITION).expect("missing Content-Disposition").to_str().unwrap();
     assert_eq!(content_disposition, "attachment; filename=\"evil.txt\"", "Double quotes in the file name should be stripped so the header stays well-formed");
+}
+
+#[tokio::test]
+async fn test_mcp_allows_loopback_host_by_default() {
+    let (app, _arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
+
+    let response = app.oneshot(mcp_initialize_request("localhost:3000")).await.unwrap();
+
+    assert_eq!(response.status(), 200, "Loopback Host header should be accepted without any extra configuration");
+}
+
+#[tokio::test]
+async fn test_mcp_rejects_public_host_not_in_allowed_hosts() {
+    let (app, _arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
+
+    let response = app.oneshot(mcp_initialize_request("paste.example.com")).await.unwrap();
+
+    assert_eq!(response.status(), 403, "Host header outside the allowed list should be rejected (DNS rebinding protection)");
+}
+
+#[tokio::test]
+async fn test_mcp_allows_configured_public_host() {
+    let (app, _arc_paste_store) = create_state_with_mcp_hosts(5, 1_048_576, 20_971_520, &["paste.example.com"]);
+
+    let response = app.oneshot(mcp_initialize_request("paste.example.com")).await.unwrap();
+
+    assert_eq!(response.status(), 200, "Host header listed in MCP_ALLOWED_HOSTS should be accepted");
+}
+
+#[tokio::test]
+async fn test_mcp_allowed_host_with_port_matches_only_that_port() {
+    let (app, _arc_paste_store) = create_state_with_mcp_hosts(5, 1_048_576, 20_971_520, &["paste.example.com:8080"]);
+
+    let allowed = app.clone().oneshot(mcp_initialize_request("paste.example.com:8080")).await.unwrap();
+    let other_port = app.oneshot(mcp_initialize_request("paste.example.com:9090")).await.unwrap();
+
+    assert_eq!(allowed.status(), 200, "Host with the configured port should be accepted");
+    assert_eq!(other_port.status(), 403, "Host with a different port than the configured one should be rejected");
 }

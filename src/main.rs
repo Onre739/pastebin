@@ -26,12 +26,17 @@ async fn main() {
         .parse()
         .expect("MAX_FILE_SIZE must be valid number (usize)");
 
+    let mut mcp_hosts = vec!["localhost".to_string(), "127.0.0.1".into(), "::1".into()];
+    if let Ok(extra) = env::var("MCP_ALLOWED_HOSTS") {
+        mcp_hosts.extend(extra.split(',').map(str::trim).filter(|h| !h.is_empty()).map(String::from));
+    }
+
     // Create app state
     let paste_store =  Arc::new(Mutex::new(store::PasteStore::new(max_pastes, max_paste_size, max_file_size)));
     let style_store = Arc::new(store::StyleStore::new());
     let state = store::AppState{paste_store: paste_store, style_store: style_store};
 
-    let app = routes::create_router(state);
+    let app = routes::create_router(state, &mcp_hosts);
 
     let host = env::var("URL").expect("URL must be defined in .env!");
     let port = env::var("PORT").expect("PORT must be defined in .env!");
