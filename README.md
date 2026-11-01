@@ -14,7 +14,7 @@ Podrobný popis požadavků a architektury:
 - Zachování původního názvu souboru u binárních pastů — `Content-Disposition` při stažení použije skutečný název (např. `photo.png`), ne generický `{uuid}.bin` (viz [ADR 0009](docs/adr/0009-original-file-name-preservation.md))
 - Náhledová stránka pro binární pasty (`GET /paste/{uuid}`) — jméno souboru, velikost, a pro rozpoznané obrázkové přípony inline náhled; syrová data (stažení) jsou na `GET /paste/{uuid}/raw`, které se nepočítá jako zobrazení (viz [ADR 0011](docs/adr/0011-octet-stream-preview-page.md))
 - Zobrazení pastu podle UUID (`GET /paste/{uuid}`), 404 pro neexistující/evikovaný paste
-- Renderování podle typu obsahu (`PlainText`, `Html`, `Markdown`, `OctetStream`) — každý typ má vlastní tmavou HTML šablonu s odkazem zpět na domovskou stránku. `Html` je obalený v `<iframe>` (obsah beze změny, bez sanitizace, viz Omezení) — `<iframe>` je stejná origin jako zbytek aplikace, takže nedává žádnou skutečnou bezpečnostní izolaci, jen vizuální oddělení (viz [ADR 0013](docs/adr/0013-html-iframe-wrapper.md)). Obsah/metadata vkládaná přímo do ostatních šablon (text pastu, název souboru) jsou escapovaná, aby paste nemohl spustit vlastní JS v prohlížeči diváka (viz [ADR 0011](docs/adr/0011-octet-stream-preview-page.md), [ADR 0012](docs/adr/0012-plain-text-html-page.md))
+- Renderování podle typu obsahu (`PlainText`, `Html`, `Markdown`, `OctetStream`) — každý typ má vlastní tmavou HTML šablonu s odkazem zpět na domovskou stránku. `Html` je obalený v `<iframe>` (obsah beze změny, bez sanitizace, viz Omezení) — `<iframe>` je stejná origin jako zbytek aplikace, takže nedává žádnou skutečnou bezpečnostní izolaci, jen vizuální oddělení (viz [ADR 0013](docs/adr/0013-html-iframe-wrapper.md)). Text `PlainText` pastu a název souboru se před vložením do šablony escapují, aby paste nemohl spustit vlastní JS v prohlížeči diváka. Vyrenderovaný `Markdown` se ale **nesanitizuje** — HTML vložené do Markdownu (včetně `<script>`) a `javascript:` odkazy projdou do stránky beze změny (viz Omezení) (viz [ADR 0011](docs/adr/0011-octet-stream-preview-page.md), [ADR 0012](docs/adr/0012-plain-text-html-page.md))
 - Markdown → HTML (`pulldown-cmark`), zvýraznění syntaxe v blocích kódu (`syntect`, tmavé téma), bloky ```mermaid``` renderované na SVG (`mermaid-svg`) — výstup je obalený do stejné tmavé šablony jako homepage
 - Countdown LRU evikce při naplnění kapacity
 - Validace vstupu (prázdný obsah, příliš velký payload, neplatný mimetype) — textové pasty a binární soubory mají oddělený limit velikosti
@@ -66,9 +66,19 @@ Spustí unit testy (`src/store.rs`, `src/render.rs`) i integrační testy (`test
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (GitHub Actions), dva joby:
 - **test** — na každý `push`/`pull_request` do `main` spustí `cargo build` + `cargo test`.
-- **docker** — jen po `push` do `main` a jen když `test` uspěje: sestaví image podle `Dockerfile` a publikuje ho do GitHub Container Registry (`ghcr.io/<owner>/<repo>`, tagy `latest` a zkrácené SHA), bez extra secrets (vestavěný `GITHUB_TOKEN`).
+- **docker** — jen po `push` do `main` a jen když `test` uspěje: sestaví image podle `Dockerfile` a publikuje ho do GitHub Container Registry (`ghcr.io/<owner>/<repo>`, tagy `latest` a `sha-<7 znaků>`, přihlášení přes vestavěný `GITHUB_TOKEN`). Posledním krokem zapíše nový `sha-…` tag do GitOps repozitáře (viz [Nasazení](#nasazení-gitops--argocd)).
 
 Repozitář sám o sobě nevynucuje "merge jen po zeleném CI" — to (a viditelnost GHCR balíčku, defaultně private) je potřeba nastavit ručně v GitHub Settings. Podrobnosti a zvažované alternativy (Docker Hub, `docker-compose.yml`) viz [ADR 0010](docs/adr/0010-github-actions-ci-docker-image.md).
+
+### Nasazení (GitOps / ArgoCD)
+
+Aplikace se nasazuje do Kubernetes přes ArgoCD. Manifesty nejsou v tomto repozitáři, ale v samostatném [`Onre739/pastebin-gitops`](https://github.com/Onre739/pastebin-gitops) (`k8s/app.yaml`), který ArgoCD sleduje. Job `docker` po publikaci image naklonuje GitOps repozitář, nahradí v `k8s/app.yaml` referenci `ghcr.io/onre739/pastebin:sha-…` novým tagem a změnu commitne. ArgoCD ji pak nasadí.
+
+- **Potřebný secret:** `GITOPS_PAT` v nastavení tohoto repozitáře (token s právem zápisu do `pastebin-gitops`).
+- **Konfigurace prostředí** (`URL`, `PORT`, limity, `MCP_ALLOWED_HOSTS`) se nastavuje v manifestech v GitOps repozitáři, ne tady.
+- **Návrat ke starší verzi:** `git revert` commitu s tagem v GitOps repozitáři. Další úspěšný běh CI ho ale přepíše.
+
+Podrobnosti a zvažované alternativy viz [ADR 0015](docs/adr/0015-gitops-argocd-deployment.md).
 
 ## Docker
 
@@ -112,4 +122,4 @@ Dockerfile    - multi-stage build (kompilace → štíhlý runtime image)
 
 ## Omezení
 
-Úložiště je čistě v paměti — restart procesu znamená ztrátu všech pastů. Obsah typu `Html` se vrací beze změny, bez sanitizace. Žádná autentizace ani rate-limiting. Podrobnosti a zdůvodnění viz [`docs/requirements.md`](docs/requirements.md) a [`docs/architecture.md`](docs/architecture.md).
+Úložiště je čistě v paměti — restart procesu znamená ztrátu všech pastů. Obsah typu `Html` se vrací beze změny, bez sanitizace (záměr). Výstup `Markdown` se také nesanitizuje, to ale záměr není a je potřeba ho opravit. Aplikace sama neposílá žádné bezpečnostní hlavičky (CSP) — při veřejném nasazení je musí doplnit reverse proxy. Žádná autentizace ani rate-limiting. Podrobnosti a zdůvodnění viz [`docs/requirements.md`](docs/requirements.md) a [`docs/architecture.md`](docs/architecture.md).

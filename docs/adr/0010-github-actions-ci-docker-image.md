@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted, rozšířeno [ADR 0015](./0015-gitops-argocd-deployment.md) — job `docker` navíc zapisuje SHA tag do GitOps repozitáře a potřebuje secret `GITOPS_PAT` (tvrzení „bez extra secrets“ níže už neplatí pro celý job, jen pro přihlášení do GHCR).
 
 ## Kontext
 
