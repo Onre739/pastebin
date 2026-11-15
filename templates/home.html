@@ -157,7 +157,9 @@
 
         <div class="panel">
             <h3>Submit a Paste</h3>
-            <form id="paste-form">
+            <form id="paste-form"
+                data-max-paste-size="{{MAX_PASTE_SIZE_BYTES}}" data-max-paste-size-label="{{MAX_PASTE_SIZE}}"
+                data-max-file-size="{{MAX_FILE_SIZE_BYTES}}" data-max-file-size-label="{{MAX_FILE_SIZE}}">
                 <label for="content" id="content-label">Content</label>
                 <textarea id="content" placeholder="Content" required></textarea>
 
@@ -165,7 +167,7 @@
                     <input type="file" id="file-input" hidden>
                     <p id="drop-zone-text">Drag &amp; drop a file anywhere on this page, or click here to browse</p>
                 </div>
-                <p class="form-hint" id="file-hint" hidden>The file is sent unchanged (binary) — images, ZIP, and other binary formats are supported. Maximum file size: {{MAX_FILE_SIZE_MB}} MB.</p>
+                <p class="form-hint" id="file-hint" hidden>The file is sent unchanged (binary) — images, ZIP, and other binary formats are supported. Maximum file size: {{MAX_FILE_SIZE}}.</p>
 
                 <label for="mimetype">MIME Type</label>
                 <select id="mimetype">
@@ -191,6 +193,12 @@
         const fileHint = document.getElementById('file-hint');
         const mimetypeSelect = document.getElementById('mimetype');
         const formError = document.getElementById('form-error');
+
+        const pasteForm = document.getElementById('paste-form');
+        const maxPasteSize = Number(pasteForm.dataset.maxPasteSize);
+        const maxPasteSizeLabel = pasteForm.dataset.maxPasteSizeLabel;
+        const maxFileSize = Number(pasteForm.dataset.maxFileSize);
+        const maxFileSizeLabel = pasteForm.dataset.maxFileSizeLabel;
 
         function isOctetStream() {
             return mimetypeSelect.value === 'OctetStream';
@@ -293,12 +301,26 @@
             if (isOctetStream()) {
                 if (fileInput.files.length === 0) {
                     dropZone.classList.add('invalid');
-                    showFormError('Vyber soubor.');
+                    showFormError('Please select a file.');
+                    return false;
+                }
+                if (fileInput.files[0].size === 0) {
+                    dropZone.classList.add('invalid');
+                    showFormError('The selected file is empty.');
+                    return false;
+                }
+                if (fileInput.files[0].size > maxFileSize) {
+                    dropZone.classList.add('invalid');
+                    showFormError(`The file is too large. Maximum file size is ${maxFileSizeLabel}.`);
                     return false;
                 }
             } else if (contentInput.value.trim() === '') {
                 contentInput.classList.add('invalid');
                 showFormError('Content must not be empty.');
+                return false;
+            } else if (new TextEncoder().encode(contentInput.value).length > maxPasteSize) {
+                contentInput.classList.add('invalid');
+                showFormError(`The content is too large. Maximum size is ${maxPasteSizeLabel}.`);
                 return false;
             }
 
@@ -306,35 +328,80 @@
             return true;
         }
 
+        // Server errors are plain text (AppError / axum rejections). A reverse proxy
+        // may answer with its own HTML error page instead, so only plain text is shown.
+        async function readServerMessage(response) {
+            const contentType = response.headers.get('Content-Type') || '';
+            if (!contentType.startsWith('text/plain')) {
+                return '';
+            }
+            try {
+                const text = (await response.text()).trim();
+                return text.length > 300 ? text.slice(0, 300) + '…' : text;
+            } catch {
+                return '';
+            }
+        }
+
+        // statusText is always empty over HTTP/2, so the message is built from the status code.
+        function describeError(status, serverMessage, isFile) {
+            const detail = serverMessage ? ` (${serverMessage})` : '';
+            switch (status) {
+                case 413:
+                    return isFile
+                        ? `The file is too large. Maximum file size is ${maxFileSizeLabel}.`
+                        : `The content is too large. Maximum size is ${maxPasteSizeLabel}.`;
+                case 400:
+                    return serverMessage
+                        ? `The paste was rejected: ${serverMessage}`
+                        : 'The paste was rejected by the server.';
+                case 422:
+                    return `The server could not process the request${detail}.`;
+                default:
+                    return status >= 500
+                        ? `Server error (HTTP ${status}). Please try again later.`
+                        : `The request failed (HTTP ${status})${detail}.`;
+            }
+        }
+
         document.getElementById('submit').addEventListener('click', async (event) => {
             event.preventDefault();
             const mimetypeValue = mimetypeSelect.value;
+            const isFile = isOctetStream();
 
             if (!validateForm()) {
                 return;
             }
 
-            const response = isOctetStream()
-                ? await fetch('/paste/binary', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/octet-stream',
-                        'X-File-Name-B64': fileNameToBase64(fileInput.files[0].name),
-                    },
-                    body: fileInput.files[0],
-                })
-                : await fetch('/paste/json', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ "content": contentInput.value, "mimetype": mimetypeValue }),
-                });
+            let response;
+            try {
+                response = isFile
+                    ? await fetch('/paste/binary', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/octet-stream',
+                            'X-File-Name-B64': fileNameToBase64(fileInput.files[0].name),
+                        },
+                        body: fileInput.files[0],
+                    })
+                    : await fetch('/paste/json', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ "content": contentInput.value, "mimetype": mimetypeValue }),
+                    });
+            } catch (error) {
+                showFormError('Could not reach the server. Check your connection and try again.');
+                console.error('Network error:', error);
+                return;
+            }
 
             if (response.ok) {
                 const id = await response.json();
                 window.location.href = '/paste/' + id;
             } else {
-                showFormError(`HTTP Chyba: ${response.status} - ${response.statusText}`);
-                console.error(`HTTP Chyba: ${response.status} - ${response.statusText}`);
+                const serverMessage = await readServerMessage(response);
+                showFormError(describeError(response.status, serverMessage, isFile));
+                console.error(`HTTP ${response.status}`, serverMessage);
             }
         });
     </script>

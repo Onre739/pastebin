@@ -11,9 +11,14 @@ const OCTET_STREAM_TEMPLATE: &str = include_str!("../templates/octet_stream.html
 const PLAIN_TEXT_TEMPLATE: &str = include_str!("../templates/plain_text.html");
 const HTML_PAGE_TEMPLATE: &str = include_str!("../templates/html_page.html");
 
-pub fn render_home_page(max_file_size: usize) -> Result<Html<String>, AppError> {
-    let max_file_size_mb = max_file_size / (1024 * 1024);
-    let page = HOME_TEMPLATE.replace("{{MAX_FILE_SIZE_MB}}", &max_file_size_mb.to_string());
+pub fn render_home_page(max_paste_size: usize, max_file_size: usize) -> Result<Html<String>, AppError> {
+    // Limits are passed in bytes (for client-side checks before upload) and
+    // human-readable (for the hint and error messages).
+    let page = HOME_TEMPLATE
+        .replace("{{MAX_PASTE_SIZE_BYTES}}", &max_paste_size.to_string())
+        .replace("{{MAX_FILE_SIZE_BYTES}}", &max_file_size.to_string())
+        .replace("{{MAX_PASTE_SIZE}}", &format_file_size(max_paste_size))
+        .replace("{{MAX_FILE_SIZE}}", &format_file_size(max_file_size));
     Ok(Html(page))
 }
 
@@ -197,6 +202,24 @@ mod tests {
 
 use super::*;
 
+
+    #[test]
+    fn home_page_embeds_size_limits() {
+        let page = render_home_page(1_048_576, 20_971_520).expect("render_home_page failed").0;
+
+        assert!(page.contains(r#"data-max-paste-size="1048576""#), "paste limit in bytes should be available to the client-side check");
+        assert!(page.contains(r#"data-max-file-size="20971520""#), "file limit in bytes should be available to the client-side check");
+        assert!(page.contains(r#"data-max-paste-size-label="1.00 MB""#), "paste limit should be passed human-readable for error messages");
+        assert!(page.contains("Maximum file size: 20.00 MB."), "file hint should show the human-readable limit");
+        assert!(!page.contains("{{"), "no template placeholder should be left unreplaced");
+    }
+
+    #[test]
+    fn home_page_limit_below_one_mib_is_not_rounded_to_zero() {
+        let page = render_home_page(500, 512_000).expect("render_home_page failed").0;
+
+        assert!(page.contains("Maximum file size: 500.0 KB."), "limits under 1 MiB must not be shown as 0 MB");
+    }
 
     #[test]
     fn md_to_html() {

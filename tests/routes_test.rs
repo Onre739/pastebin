@@ -43,6 +43,11 @@ async fn test_get_home() {
         .unwrap();
 
     assert_eq!(response.status(), 200);
+
+    let body = body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body_str = str::from_utf8(&body).unwrap();
+    assert!(body_str.contains(r#"data-max-paste-size="1048576""#), "home page should expose the configured paste limit");
+    assert!(body_str.contains(r#"data-max-file-size="20971520""#), "home page should expose the configured file limit");
 }
     
 #[tokio::test]

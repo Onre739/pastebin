@@ -39,8 +39,11 @@ pub fn create_router(state: AppState, mcp_hosts: &[String]) -> Router {
 }
 
 async fn get_home(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
-    let max_file_size = state.paste_store.lock().unwrap().max_file_size;
-    render::render_home_page(max_file_size)
+    let (max_paste_size, max_file_size) = {
+        let paste_store = state.paste_store.lock().unwrap();
+        (paste_store.max_paste_size, paste_store.max_file_size)
+    };
+    render::render_home_page(max_paste_size, max_file_size)
 }
 
 async fn post_paste_json(State(state): State<AppState>, Json(payload): Json<CreatePasteDto>) 
