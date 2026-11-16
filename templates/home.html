@@ -168,6 +168,7 @@
                     <p id="drop-zone-text">Drag &amp; drop a file anywhere on this page, or click here to browse</p>
                 </div>
                 <p class="form-hint" id="file-hint" hidden>The file is sent unchanged (binary) — images, ZIP, and other binary formats are supported. Maximum file size: {{MAX_FILE_SIZE}}.</p>
+                <p class="form-hint" id="html-hint" hidden>HTML is displayed as-is, but scripts are disabled for security — <code>&lt;script&gt;</code> tags and event handlers like <code>onclick</code> won't run.</p>
 
                 <label for="mimetype">MIME Type</label>
                 <select id="mimetype">
@@ -191,6 +192,7 @@
         const dropZoneText = document.getElementById('drop-zone-text');
         const fileInput = document.getElementById('file-input');
         const fileHint = document.getElementById('file-hint');
+        const htmlHint = document.getElementById('html-hint');
         const mimetypeSelect = document.getElementById('mimetype');
         const formError = document.getElementById('form-error');
 
@@ -213,6 +215,7 @@
 
             dropZone.hidden = !octetStream;
             fileHint.hidden = !octetStream;
+            htmlHint.hidden = mimetypeSelect.value !== 'Html';
 
             formError.classList.remove('visible');
             contentInput.classList.remove('invalid');

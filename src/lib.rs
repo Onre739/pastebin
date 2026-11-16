@@ -3,3 +3,4 @@ pub mod render;
 pub mod model;
 pub mod store;
 pub mod mcp;
+pub mod security;

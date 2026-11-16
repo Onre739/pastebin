@@ -215,6 +215,14 @@ use super::*;
     }
 
     #[test]
+    fn home_page_warns_that_scripts_are_disabled_for_html() {
+        let page = render_home_page(1_048_576, 20_971_520).expect("render_home_page failed").0;
+
+        assert!(page.contains(r#"<p class="form-hint" id="html-hint" hidden>"#), "HTML hint should be on the page, hidden until Html is selected");
+        assert!(page.contains("scripts are disabled"), "HTML hint should explain that scripts won't run (ADR 0016)");
+    }
+
+    #[test]
     fn home_page_limit_below_one_mib_is_not_rounded_to_zero() {
         let page = render_home_page(500, 512_000).expect("render_home_page failed").0;
 

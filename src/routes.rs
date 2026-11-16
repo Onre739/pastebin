@@ -1,5 +1,5 @@
 use axum::{
-    Json, Router, body::Bytes, extract::{DefaultBodyLimit, Form, Path, State}, http::HeaderMap, response::IntoResponse, routing::{get, post},
+    Json, Router, body::Bytes, middleware, extract::{DefaultBodyLimit, Form, Path, State}, http::HeaderMap, response::IntoResponse, routing::{get, post},
 };
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -8,6 +8,7 @@ use uuid::Uuid;
 use crate::{model::{AppError, MimeKind, sanitize_file_name}, store::AppState};
 use crate::render;
 use crate::mcp::mcp_service;
+use crate::security;
 
 #[derive(Deserialize)]
 pub struct CreatePasteDto {
@@ -34,6 +35,7 @@ pub fn create_router(state: AppState, mcp_hosts: &[String]) -> Router {
         .layer(DefaultBodyLimit::max(max_body_size))
 
         .nest_service("/mcp", mcp_service)
+        .layer(middleware::from_fn(security::security_headers))
         .with_state(state);
     app
 }

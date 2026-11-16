@@ -14,7 +14,8 @@ Podrobný popis požadavků a architektury:
 - Zachování původního názvu souboru u binárních pastů — `Content-Disposition` při stažení použije skutečný název (např. `photo.png`), ne generický `{uuid}.bin` (viz [ADR 0009](docs/adr/0009-original-file-name-preservation.md))
 - Náhledová stránka pro binární pasty (`GET /paste/{uuid}`) — jméno souboru, velikost, a pro rozpoznané obrázkové přípony inline náhled; syrová data (stažení) jsou na `GET /paste/{uuid}/raw`, které se nepočítá jako zobrazení (viz [ADR 0011](docs/adr/0011-octet-stream-preview-page.md))
 - Zobrazení pastu podle UUID (`GET /paste/{uuid}`), 404 pro neexistující/evikovaný paste
-- Renderování podle typu obsahu (`PlainText`, `Html`, `Markdown`, `OctetStream`) — každý typ má vlastní tmavou HTML šablonu s odkazem zpět na domovskou stránku. `Html` je obalený v `<iframe>` (obsah beze změny, bez sanitizace, viz Omezení) — `<iframe>` je stejná origin jako zbytek aplikace, takže nedává žádnou skutečnou bezpečnostní izolaci, jen vizuální oddělení (viz [ADR 0013](docs/adr/0013-html-iframe-wrapper.md)). Text `PlainText` pastu a název souboru se před vložením do šablony escapují, aby paste nemohl spustit vlastní JS v prohlížeči diváka. Vyrenderovaný `Markdown` se ale **nesanitizuje** — HTML vložené do Markdownu (včetně `<script>`) a `javascript:` odkazy projdou do stránky beze změny (viz Omezení) (viz [ADR 0011](docs/adr/0011-octet-stream-preview-page.md), [ADR 0012](docs/adr/0012-plain-text-html-page.md))
+- Renderování podle typu obsahu (`PlainText`, `Html`, `Markdown`, `OctetStream`) — každý typ má vlastní tmavou HTML šablonu s odkazem zpět na domovskou stránku. `Html` je obalený v `<iframe>` (obsah beze změny, bez sanitizace, viz [ADR 0013](docs/adr/0013-html-iframe-wrapper.md)). Text `PlainText` pastu a název souboru se před vložením do šablony escapují. Vyrenderovaný `Markdown` se nesanitizuje (HTML vložené do Markdownu projde do stránky)
+- Skripty v pastech se nikdy nespustí — aplikace posílá na všechny stránky s uživatelským obsahem `Content-Security-Policy: sandbox` bez `allow-scripts`, takže prohlížeč zablokuje `<script>`, `onerror=` i `javascript:` odkazy v `Html` i `Markdown` pastech. Domovská stránka má vlastní CSP, která povoluje jen její skript. Ochrana nezávisí na reverse proxy (viz [ADR 0016](docs/adr/0016-csp-scripts-disabled-in-pastes.md)) (viz [ADR 0011](docs/adr/0011-octet-stream-preview-page.md), [ADR 0012](docs/adr/0012-plain-text-html-page.md))
 - Markdown → HTML (`pulldown-cmark`), zvýraznění syntaxe v blocích kódu (`syntect`, tmavé téma), bloky ```mermaid``` renderované na SVG (`mermaid-svg`) — výstup je obalený do stejné tmavé šablony jako homepage
 - Countdown LRU evikce při naplnění kapacity
 - Validace vstupu (prázdný obsah, příliš velký payload, neplatný mimetype) — textové pasty a binární soubory mají oddělený limit velikosti
@@ -105,6 +106,7 @@ src/
   lib.rs      - deklarace veřejných modulů knihovny
   routes.rs   - HTTP handlery a axum router
   mcp.rs      - MCP server (rmcp), nástroje create_paste/get_paste na POST /mcp
+  security.rs - middleware s CSP a bezpečnostními hlavičkami (sandbox pro pasty)
   store.rs    - PasteStore (úložiště + countdown LRU), StyleStore, AppState
   render.rs   - markdown/syntax highlighting/mermaid rendering, HTML šablony
   model.rs    - Paste, MimeKind, AppError
@@ -122,4 +124,4 @@ Dockerfile    - multi-stage build (kompilace → štíhlý runtime image)
 
 ## Omezení
 
-Úložiště je čistě v paměti — restart procesu znamená ztrátu všech pastů. Obsah typu `Html` se vrací beze změny, bez sanitizace (záměr). Výstup `Markdown` se také nesanitizuje, to ale záměr není a je potřeba ho opravit. Aplikace sama neposílá žádné bezpečnostní hlavičky (CSP) — při veřejném nasazení je musí doplnit reverse proxy. Žádná autentizace ani rate-limiting. Podrobnosti a zdůvodnění viz [`docs/requirements.md`](docs/requirements.md) a [`docs/architecture.md`](docs/architecture.md).
+Úložiště je čistě v paměti — restart procesu znamená ztrátu všech pastů. Obsah typu `Html` se vrací beze změny, bez sanitizace (záměr), JavaScript v něm ale nefunguje (CSP `sandbox`). Výstup `Markdown` se nesanitizuje — skripty se v něm nespustí, vložené HTML a CSS ale ano (volitelná sanitizace viz issue #18). HSTS a `Permissions-Policy` aplikace neposílá, patří do reverse proxy s TLS. Žádná autentizace ani rate-limiting. Podrobnosti a zdůvodnění viz [`docs/requirements.md`](docs/requirements.md) a [`docs/architecture.md`](docs/architecture.md).

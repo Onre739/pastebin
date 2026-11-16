@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted, bezpečnostní část doplněna [ADR 0016](./0016-csp-scripts-disabled-in-pastes.md) — skripty v `Html` pastech se už nespustí (CSP `sandbox` na stránce i na `/raw`), takže chybějící izolace `<iframe>`u popsaná níže už nepředstavuje riziko.
 
 ## Kontext
 

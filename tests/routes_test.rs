@@ -652,3 +652,85 @@ async fn test_mcp_allowed_host_with_port_matches_only_that_port() {
     assert_eq!(allowed.status(), 200, "Host with the configured port should be accepted");
     assert_eq!(other_port.status(), 403, "Host with a different port than the configured one should be rejected");
 }
+
+fn csp(response: &axum::response::Response) -> Option<String> {
+    response.headers().get(header::CONTENT_SECURITY_POLICY).map(|v| v.to_str().unwrap().to_string())
+}
+
+fn assert_scripts_blocked(response: &axum::response::Response, what: &str) {
+    let csp = csp(response).unwrap_or_else(|| panic!("{} should send a Content-Security-Policy", what));
+    assert!(csp.starts_with("sandbox"), "{} CSP should start with the sandbox directive, got: {}", what, csp);
+    assert!(!csp.contains("allow-scripts"), "{} CSP must not allow scripts, got: {}", what, csp);
+    assert_eq!(response.headers().get(header::X_CONTENT_TYPE_OPTIONS).unwrap(), "nosniff", "{} should send X-Content-Type-Options: nosniff", what);
+}
+
+fn insert_paste(paste_store: &Arc<Mutex<PasteStore>>, content: &str, mimetype: model::MimeKind) -> Uuid {
+    paste_store.lock().unwrap().insert(content.as_bytes().to_vec(), mimetype, None).expect("insert failed")
+}
+
+#[tokio::test]
+async fn test_home_page_allows_its_own_script_but_cannot_be_framed() {
+    let (app, _arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
+
+    let response = app.oneshot(Request::builder().uri("/").body(Body::empty()).unwrap()).await.unwrap();
+
+    let csp = csp(&response).expect("home page should send a Content-Security-Policy");
+    assert!(!csp.contains("sandbox"), "home page must not be sandboxed - its form needs JavaScript");
+    assert!(csp.contains("script-src 'self' 'unsafe-inline'"), "home page CSP should allow its own inline script");
+    assert!(csp.contains("frame-ancestors 'none'"), "home page should not be embeddable in a frame");
+    assert_eq!(response.headers().get(header::X_FRAME_OPTIONS).unwrap(), "DENY");
+    assert_eq!(response.headers().get(header::X_CONTENT_TYPE_OPTIONS).unwrap(), "nosniff");
+    assert_eq!(response.headers().get(header::REFERRER_POLICY).unwrap(), "no-referrer");
+}
+
+#[tokio::test]
+async fn test_markdown_paste_page_blocks_scripts() {
+    let (app, arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
+    let id = insert_paste(&arc_paste_store, "<script>alert(1)</script>
+
+[x](javascript:alert(1))", model::MimeKind::Markdown);
+
+    let response = app.oneshot(Request::builder().uri(format!("/paste/{}", id)).body(Body::empty()).unwrap()).await.unwrap();
+
+    assert_eq!(response.status(), 200);
+    assert_scripts_blocked(&response, "Markdown paste page");
+}
+
+#[tokio::test]
+async fn test_html_paste_page_and_raw_block_scripts() {
+    let (app, arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
+    let id = insert_paste(&arc_paste_store, "<b>hi</b><script>alert(1)</script>", model::MimeKind::Html);
+
+    let page = app.clone().oneshot(Request::builder().uri(format!("/paste/{}", id)).body(Body::empty()).unwrap()).await.unwrap();
+    let raw = app.oneshot(Request::builder().uri(format!("/paste/{}/raw", id)).body(Body::empty()).unwrap()).await.unwrap();
+
+    assert_eq!(page.status(), 200);
+    assert_eq!(raw.status(), 200);
+    assert_scripts_blocked(&page, "Html paste wrapper page");
+    assert_scripts_blocked(&raw, "Html paste /raw (iframe content)");
+    assert!(csp(&raw).unwrap().contains("allow-same-origin"), "/raw must keep allow-same-origin so the wrapper's frame-src 'self' can load it");
+}
+
+#[tokio::test]
+async fn test_not_found_and_unknown_paths_are_sandboxed() {
+    let (app, _arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
+
+    let missing = app.clone().oneshot(Request::builder().uri(format!("/paste/{}", Uuid::new_v4())).body(Body::empty()).unwrap()).await.unwrap();
+    let unknown = app.oneshot(Request::builder().uri("/something/else").body(Body::empty()).unwrap()).await.unwrap();
+
+    assert_eq!(missing.status(), 404);
+    assert_eq!(unknown.status(), 404);
+    assert_scripts_blocked(&missing, "404 for a missing paste");
+    assert_scripts_blocked(&unknown, "404 for an unknown path");
+}
+
+#[tokio::test]
+async fn test_mcp_endpoint_has_no_csp() {
+    let (app, _arc_paste_store) = create_state(5, 1_048_576, 20_971_520);
+
+    let response = app.oneshot(mcp_initialize_request("localhost:3000")).await.unwrap();
+
+    assert_eq!(response.status(), 200);
+    assert!(csp(&response).is_none(), "/mcp returns JSON-RPC, not a document - no CSP needed");
+    assert_eq!(response.headers().get(header::X_CONTENT_TYPE_OPTIONS).unwrap(), "nosniff");
+}
